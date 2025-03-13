@@ -1,8 +1,5 @@
-use core::slice;
-use std::{cell::RefCell, marker::Tuple, ops::Index, rc::Rc, sync::Arc};
-
 #[derive(Clone)]
-pub struct Tensor<T: Clone> {
+pub struct CpuTensor<T: Clone> {
     shape: Vec<usize>,
     stride: Vec<usize>,
     storage: Rc<RefCell<Vec<T>>>,
@@ -12,22 +9,7 @@ pub trait MulIter<T: Clone> {
     fn mul_all(self, default: T) -> T;
 }
 
-impl<'a, U, T> MulIter<T> for U
-where
-    U: Iterator<Item = T>,
-    T: std::ops::Mul<T, Output = T> + Copy,
-{
-    fn mul_all(self, default: T) -> T {
-        self.scan(default, |s, x| {
-            *s = *s * x;
-            Some(*s)
-        })
-        .last()
-        .unwrap_or(default)
-    }
-}
-
-impl<T> Tensor<T>
+impl<T> CpuTensor<T>
 where
     T: Clone,
 {
@@ -43,7 +25,7 @@ where
         for _ in 0..cap {
             storage.borrow_mut().push(default.clone());
         }
-        Tensor {
+        CpuTensor {
             shape: shape.to_owned(),
             stride: calculate_strides(shape, Some(cap)).0,
             storage,
@@ -75,12 +57,12 @@ fn calculate_strides(shape: &[usize], cap: Option<usize>) -> (Vec<usize>, usize)
     (shape.iter().map(|a| cap / a).collect(), cap)
 }
 
-impl<T> std::ops::Add<&Tensor<T>> for Tensor<T>
+impl<T> std::ops::Add<&CpuTensor<T>> for CpuTensor<T>
 where
     T: Clone,
 {
-    type Output = Tensor<T>;
-    fn add(self, rhs: &Tensor<T>) -> Self::Output {
+    type Output = CpuTensor<T>;
+    fn add(self, rhs: &CpuTensor<T>) -> Self::Output {
         assert_eq!(
             self.shape, rhs.shape,
             "trying to add tensors with distinct shapes"
@@ -93,7 +75,7 @@ where
     }
 }
 
-impl<T: Clone> Index<&[usize]> for Tensor<T>
+impl<T: Clone> Index<&[usize]> for CpuTensor<T>
 where
 // Idx: Index<usize, Output = usize> + IntoIterator,
 {
@@ -106,38 +88,38 @@ where
     }
 }
 
-struct TensorIndexIterator<'a> {
-    num: usize,
-    current: Box<[usize]>,
-    shape: &'a Vec<usize>
-}
+// struct TensorIndexIterator<'a> {
+//     num: usize,
+//     current: Box<[usize]>,
+//     shape: &'a Vec<usize>
+// }
 
-impl<'a> TensorIndexIterator<'a> {
-    fn create(shape: &'a Vec<usize>) -> Self {
-      
-      TensorIndexIterator {
-        num: shape.iter().sum(),
-        current: ,
-        shape,
-      }
-    }
-}
+// impl<'a> TensorIndexIterator<'a> {
+//     fn create(shape: &'a Vec<usize>) -> Self {
 
-impl<'a> Iterator for TensorIndexIterator<'a> {
-    type Item = &'a Vec<usize>;
+//       TensorIndexIterator {
+//         num: shape.iter().sum(),
+//         current: ,
+//         shape,
+//       }
+//     }
+// }
 
-    fn next(&mut self) -> Option<Self::Item> {
-        todo!()
-    }
-}
+// impl<'a> Iterator for TensorIndexIterator<'a> {
+//     type Item = &'a Vec<usize>;
 
-impl<T> std::ops::Mul<&Tensor<T>> for Tensor<T>
+//     fn next(&mut self) -> Option<Self::Item> {
+//         todo!()
+//     }
+// }
+
+impl<T> std::ops::Mul<&CpuTensor<T>> for CpuTensor<T>
 where
     T: Clone,
 {
-    type Output = Tensor<T>;
+    type Output = CpuTensor<T>;
 
-    fn mul(self, rhs: &Tensor<T>) -> Self::Output {
+    fn mul(self, rhs: &CpuTensor<T>) -> Self::Output {
         let shape: Vec<_> = self
             .shape
             .iter()
@@ -146,11 +128,7 @@ where
             .collect();
         let (strides, cap) = calculate_strides(shape.as_slice(), None);
 
-        let shape_iter = shape
-            .iter()
-            .copied()
-            .map(|x| 0..x);
-        
+        let shape_iter = shape.iter().copied().map(|x| 0..x);
 
         todo!()
     }
