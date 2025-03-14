@@ -1,12 +1,54 @@
-use core::slice;
 use std::{
-    cell::RefCell,
     default::{self, Default},
-    marker::{PhantomData, Tuple},
-    ops::{Add, Index, IndexMut},
-    rc::Rc,
-    sync::Arc,
+    ops::{Index, IndexMut},
 };
+
+pub struct TensorIndexer {
+    current_idx: Vec<usize>,
+    shape: Vec<usize>,
+}
+
+impl TensorIndexer {
+    pub fn create<'a, T: Clone, Ts: Tensor<'a, T>>(t: &Ts) -> TensorIndexer
+    where
+        Self: Sized,
+    {
+        TensorIndexer {
+            current_idx: vec![0; t.rank()],
+            shape: t.shape(),
+        }
+    }
+    pub fn next_idx(&mut self) -> Option<&[usize]> {
+        if self.shape.len() == 1 && self.shape[0] == 1 {
+            if self.current_idx[0] == 0 {
+                self.current_idx[0] += 1;
+                Some(&self.current_idx)
+            } else {
+                None
+            }
+        } else {
+            // Upgrade index
+            let mut i = 0;
+            let mut carry = 1;
+            while i < self.current_idx.len() && self.current_idx[i] < self.shape[i] {
+                self.current_idx[i] += carry;
+                if self.current_idx[i] == self.shape[i] {
+                    carry = 1;
+                    self.shape[i] = 0;
+                } else {
+                    carry = 0;
+                    break;
+                }
+                i += 1;
+            }
+            if carry == 1 {
+                None
+            } else {
+                Some(&self.current_idx)
+            }
+        }
+    }
+}
 
 pub trait Tensor<'a, T>: Index<&'a [usize], Output = T> + Clone
 where
@@ -16,18 +58,15 @@ where
     fn shape(&self) -> Vec<usize>;
     fn tensor_mul(&self, rhs: &Self) -> Self;
     fn convolve(self, i1: usize, i2: usize) -> Self;
-}
-
-#[derive(Copy, Clone)]
-struct Vec3<T: Clone>(T, T, T);
-
-impl<T: Default + Clone> Default for Vec3<T> {
-    fn default() -> Self {
-        Self(Default::default(), Default::default(), Default::default())
+    fn indexer(&self) -> TensorIndexer {
+        TensorIndexer::create(self)
     }
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone, Default)]
+struct Vec3<T>(T, T, T);
+
+#[derive(Clone, Debug)]
 pub struct TensorND<T, const N: usize>
 where
     T: Clone,
@@ -54,7 +93,7 @@ impl<T: Clone, const N: usize> IndexMut<&[usize]> for TensorND<T, N> {
 pub type Tensor3D<T> = TensorND<T, 3>;
 
 impl<T: Clone + Default, const N: usize> TensorND<T, N> {
-    fn default_values(rank: usize) -> Self {
+    pub fn default_values(rank: usize) -> Self {
         Self {
             rank,
             data: vec![Default::default(); N.pow((rank) as u32)],
@@ -80,6 +119,8 @@ impl<T: Clone, const N: usize> TensorND<T, N> {
         offset
     }
 }
+
+pub struct NDINdexer {}
 
 impl<T, const N: usize> Tensor<'_, T> for TensorND<T, N>
 where
