@@ -6,6 +6,7 @@ use std::{
 pub struct TensorIndexer {
     current_idx: Vec<usize>,
     shape: Vec<usize>,
+    done: bool,
 }
 
 impl TensorIndexer {
@@ -16,36 +17,36 @@ impl TensorIndexer {
         TensorIndexer {
             current_idx: vec![0; t.rank()],
             shape: t.shape(),
+            done: false,
         }
     }
-    pub fn next_idx(&mut self) -> Option<&[usize]> {
-        if self.shape.len() == 1 && self.shape[0] == 1 {
+    pub fn next_idx(&mut self) -> Option<Vec<usize>> {
+        if self.done {
+            None
+        } else if self.shape.len() == 1 && self.shape[0] == 1 {
             if self.current_idx[0] == 0 {
                 self.current_idx[0] += 1;
-                Some(&self.current_idx)
+                Some(vec![0])
             } else {
                 None
             }
         } else {
-            // Upgrade index
-            let mut i = 0;
+            let out = self.current_idx.clone();
             let mut carry = 1;
-            while i < self.current_idx.len() && self.current_idx[i] < self.shape[i] {
+            for i in (0..self.current_idx.len()).rev() {
                 self.current_idx[i] += carry;
                 if self.current_idx[i] == self.shape[i] {
                     carry = 1;
-                    self.shape[i] = 0;
+                    self.current_idx[i] = 0;
                 } else {
                     carry = 0;
                     break;
                 }
-                i += 1;
             }
             if carry == 1 {
-                None
-            } else {
-                Some(&self.current_idx)
+                self.done = true;
             }
+            Some(out)
         }
     }
 }
