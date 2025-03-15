@@ -1,6 +1,6 @@
 use std::{
-    default::{self, Default},
-    ops::{Index, IndexMut},
+    default::Default,
+    ops::{Index, IndexMut, Mul},
 };
 
 pub struct TensorIndexer {
@@ -51,21 +51,28 @@ impl TensorIndexer {
     }
 }
 
+impl Iterator for TensorIndexer {
+    type Item = Vec<usize>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next_idx()
+    }
+}
+
 pub trait Tensor<'a, T>: Index<&'a [usize], Output = T> + Clone
 where
     T: Clone,
 {
     fn rank(&self) -> usize;
     fn shape(&self) -> Vec<usize>;
-    fn tensor_mul(&self, rhs: &Self) -> Self;
+    fn tensor_mul(&self, rhs: &Self) -> Self
+    where
+        T: Mul<T, Output = T>;
     fn convolve(self, i1: usize, i2: usize) -> Self;
     fn indexer(&self) -> TensorIndexer {
         TensorIndexer::create(self)
     }
 }
-
-#[derive(Copy, Clone, Default)]
-struct Vec3<T>(T, T, T);
 
 #[derive(Clone, Debug)]
 pub struct TensorND<T, const N: usize>
@@ -113,15 +120,13 @@ impl<T: Clone, const N: usize> TensorND<T, N> {
         }
         let mut offset = 0;
         let mut stride = N.pow((self.rank - 1) as u32);
-        for i in 0..index.len() {
-            offset += stride * i;
+        for i in 0..self.rank {
+            offset += stride * index[i];
             stride /= self.rank;
         }
         offset
     }
 }
-
-pub struct NDINdexer {}
 
 impl<T, const N: usize> Tensor<'_, T> for TensorND<T, N>
 where
@@ -139,8 +144,20 @@ where
         }
     }
 
-    fn tensor_mul(&self, rhs: &Self) -> Self {
-        todo!()
+    fn tensor_mul(&self, rhs: &Self) -> Self
+    where
+        T: Mul<T, Output = T>,
+    {
+        let mut out = Self {
+            rank: self.rank + rhs.rank,
+            data: Vec::new(),
+        };
+        out.data
+            .resize(self.data.len() * rhs.data.len(), self.data[0].clone());
+        for idx in out.indexer() {
+            out[&idx] = self[&idx[..self.rank]].clone() * rhs[&idx[self.rank..]].clone();
+        }
+        out
     }
 
     fn convolve(self, i1: usize, i2: usize) -> Self {
