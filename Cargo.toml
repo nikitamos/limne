@@ -4,4 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-raylib = "5.0.2"
+tokio = { version = "1.44.1", features = ["rt", "macros", "rt-multi-thread"] }
+wgpu = "24.0.1"
+winit = "0.30.9"
