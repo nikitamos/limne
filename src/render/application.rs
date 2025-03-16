@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
-use tokio::{runtime::{Handle, Runtime}, task::spawn_blocking};
-use wgpu::{
-  Backends, Instance, InstanceDescriptor, RequestAdapterOptions, Surface,
+use tokio::{
+  runtime::{Handle, Runtime},
+  task::spawn_blocking,
 };
+use wgpu::{Adapter, Backends, Instance, InstanceDescriptor, RequestAdapterOptions, Surface};
 use winit::{
   application::ApplicationHandler,
   event::{KeyEvent, WindowEvent::*},
@@ -14,6 +15,7 @@ use winit::{
 struct State<'a> {
   instance: Instance,
   surface: Surface<'a>,
+  adapter: Adapter,
 }
 
 pub struct App<'a> {
@@ -31,6 +33,7 @@ impl<'a> State<'a> {
     let surface = instance
       .create_surface(window)
       .expect("Unable to create a surface");
+
     let adapter = instance
       .request_adapter(&RequestAdapterOptions {
         compatible_surface: Some(&surface),
@@ -38,8 +41,15 @@ impl<'a> State<'a> {
         force_fallback_adapter: false,
       })
       .await
-      .expect("Unable to create an adapter!");
-    Self { instance, surface }
+      .expect("Unable to create an adapter");
+
+    println!("Using {}", adapter.get_info().name);
+
+    Self {
+      instance,
+      surface,
+      adapter,
+    }
   }
 }
 
@@ -51,7 +61,9 @@ impl<'a> ApplicationHandler for App<'a> {
           .create_window(WindowAttributes::default())
           .expect("Error creating a window"),
       ));
-      self.state.replace(self.runtime.block_on(State::create(self.window())));
+      self
+        .state
+        .replace(self.runtime.block_on(State::create(self.window())));
     }
   }
 
@@ -71,7 +83,11 @@ impl<'a> ApplicationHandler for App<'a> {
           },
         ..
       } if state.is_pressed() => println!("ESC pressed"),
-      _ => (),
+      CloseRequested => {
+        self.state = None;
+        self.window = None;
+      }
+      _ => {}
     }
   }
 }
