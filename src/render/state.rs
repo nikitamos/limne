@@ -1,16 +1,17 @@
 use std::sync::Arc;
 use wgpu::{
-  Backends, Device, Instance, InstanceDescriptor, Queue, RequestAdapterOptions, Surface, SurfaceConfiguration
+  Backends, Color, CommandEncoderDescriptor, Device, Instance, InstanceDescriptor, Operations,
+  Queue, RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, Surface,
+  SurfaceConfiguration, TextureViewDescriptor,
 };
-use winit::window::Window;
-
+use winit::{dpi::PhysicalSize, window::Window};
 
 pub(super) struct State<'a> {
   instance: Instance,
   surface: Surface<'a>,
   device: Device,
   queue: Queue,
-  config: SurfaceConfiguration
+  config: SurfaceConfiguration,
 }
 
 impl<'a> State<'a> {
@@ -38,7 +39,7 @@ impl<'a> State<'a> {
       .expect("unable to create a device");
 
     let surface_caps = surface.get_capabilities(&adapter);
-    
+
     let surface_format = surface_caps
       .formats
       .iter()
@@ -56,15 +57,56 @@ impl<'a> State<'a> {
       view_formats: vec![],
       desired_maximum_frame_latency: 2,
     };
+    surface.configure(&device, &config);
 
     println!("Using adapter {}", adapter.get_info().name);
-
     Self {
       instance,
       surface,
       device,
       queue,
-      config
+      config,
     }
+  }
+
+  pub fn resize(&mut self, size: PhysicalSize<u32>) {
+    if size.width > 0 && size.height > 0 {
+      self.config.width = size.width;
+      self.config.height = size.height;
+      self.surface.configure(&self.device, &self.config);
+    }
+  }
+
+  pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    let output = self.surface.get_current_texture()?;
+    let view = output.texture.create_view(&TextureViewDescriptor {
+      ..Default::default()
+    });
+
+    let mut encoder = self
+      .device
+      .create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("Render Encoder"),
+      });
+
+    encoder.begin_render_pass(&RenderPassDescriptor {
+      label: Some("Clear Pass"),
+      color_attachments: &[Some(RenderPassColorAttachment {
+        view: &view,
+        resolve_target: None,
+        ops: Operations {
+          load: wgpu::LoadOp::Clear(Color::RED),
+          store: wgpu::StoreOp::Store,
+        },
+      })],
+      depth_stencil_attachment: None,
+      timestamp_writes: None,
+      occlusion_query_set: None,
+    });
+
+    self.queue.submit(std::iter::once(encoder.finish()));
+    output.present();
+
+    Ok(())
   }
 }

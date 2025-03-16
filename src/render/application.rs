@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use crate::render::state::*;
+use std::sync::Arc;
 use tokio::runtime::Runtime;
 
 use winit::{
@@ -45,11 +45,26 @@ impl<'a> ApplicationHandler for App<'a> {
           },
         ..
       } if state.is_pressed() => println!("ESC pressed"),
+      RedrawRequested => {
+        self.window().request_redraw();
+
+        match self.map_state(|s| s.render()) {
+          Ok(()) => (),
+          Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+            let size = self.window().inner_size();
+            let s = self.state.as_mut().unwrap();
+            s.resize(size);
+          }
+          Err(wgpu::SurfaceError::Timeout) => (),
+          _ => event_loop.exit(),
+        }
+      }
       CloseRequested => {
         self.state = None;
         self.window = None;
         event_loop.exit();
       }
+      Resized(size) => self.map_state(|s| s.resize(size)),
       _ => {}
     }
   }
@@ -70,11 +85,7 @@ impl App<'_> {
       panic!("")
     }
   }
-  fn state(&self) -> &State {
-    if let Some(ref s) = self.state {
-      s
-    } else {
-      panic!("")
-    }
+  fn map_state<T>(&mut self, f: impl FnOnce(&mut State) -> T) -> T {
+    self.state.as_mut().map(f).unwrap()
   }
 }
