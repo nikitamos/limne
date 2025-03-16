@@ -1,10 +1,7 @@
 use std::sync::Arc;
+use crate::render::state::*;
+use tokio::runtime::Runtime;
 
-use tokio::{
-  runtime::{Handle, Runtime},
-  task::spawn_blocking,
-};
-use wgpu::{Adapter, Backends, Instance, InstanceDescriptor, RequestAdapterOptions, Surface};
 use winit::{
   application::ApplicationHandler,
   event::{KeyEvent, WindowEvent::*},
@@ -12,45 +9,10 @@ use winit::{
   window::{Window, WindowAttributes},
 };
 
-struct State<'a> {
-  instance: Instance,
-  surface: Surface<'a>,
-  adapter: Adapter,
-}
-
 pub struct App<'a> {
   runtime: Runtime,
   window: Option<Arc<Window>>,
   state: Option<State<'a>>,
-}
-
-impl<'a> State<'a> {
-  pub async fn create(window: Arc<Window>) -> Self {
-    let instance = wgpu::Instance::new(&InstanceDescriptor {
-      backends: Backends::PRIMARY,
-      ..Default::default()
-    });
-    let surface = instance
-      .create_surface(window)
-      .expect("Unable to create a surface");
-
-    let adapter = instance
-      .request_adapter(&RequestAdapterOptions {
-        compatible_surface: Some(&surface),
-        power_preference: wgpu::PowerPreference::HighPerformance,
-        force_fallback_adapter: false,
-      })
-      .await
-      .expect("Unable to create an adapter");
-
-    println!("Using {}", adapter.get_info().name);
-
-    Self {
-      instance,
-      surface,
-      adapter,
-    }
-  }
 }
 
 impl<'a> ApplicationHandler for App<'a> {
@@ -70,7 +32,7 @@ impl<'a> ApplicationHandler for App<'a> {
   fn window_event(
     &mut self,
     event_loop: &winit::event_loop::ActiveEventLoop,
-    window_id: winit::window::WindowId,
+    _win_id: winit::window::WindowId,
     event: winit::event::WindowEvent,
   ) {
     match event {
@@ -86,6 +48,7 @@ impl<'a> ApplicationHandler for App<'a> {
       CloseRequested => {
         self.state = None;
         self.window = None;
+        event_loop.exit();
       }
       _ => {}
     }

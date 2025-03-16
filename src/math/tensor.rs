@@ -1,6 +1,6 @@
 use std::{
   default::Default,
-  ops::{Add, Index, IndexMut},
+  ops::{Index, IndexMut},
 };
 
 pub trait Tensor<'a, T>: Index<&'a [usize], Output = T> + Clone

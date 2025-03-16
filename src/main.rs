@@ -1,5 +1,4 @@
 use std::error::Error;
-use wgpu::{rwh::HasRawWindowHandle, Backends, InstanceDescriptor};
 use winit::event_loop::EventLoop;
 
 mod math;
