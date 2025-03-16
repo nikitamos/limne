@@ -1,8 +1,9 @@
-use std::sync::Arc;
+use std::{default, sync::Arc};
 use wgpu::{
   Backends, Color, CommandEncoderDescriptor, Device, Instance, InstanceDescriptor, Operations,
-  Queue, RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, Surface,
-  SurfaceConfiguration, TextureViewDescriptor,
+  PipelineLayoutDescriptor, Queue, RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline,
+  RenderPipelineDescriptor, RequestAdapterOptions, Surface, SurfaceConfiguration,
+  TextureViewDescriptor, VertexState,
 };
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -12,6 +13,7 @@ pub(super) struct State<'a> {
   device: Device,
   queue: Queue,
   config: SurfaceConfiguration,
+  render_pipeline: RenderPipeline,
 }
 
 impl<'a> State<'a> {
@@ -60,13 +62,63 @@ impl<'a> State<'a> {
     surface.configure(&device, &config);
 
     println!("Using adapter {}", adapter.get_info().name);
+    let render_pipeline = Self::create_pipeline(&device, &config);
     Self {
       instance,
       surface,
       device,
       queue,
       config,
+      render_pipeline,
     }
+  }
+
+  fn create_pipeline(device: &Device, config: &SurfaceConfiguration) -> RenderPipeline {
+    let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+      label: Some("Render pipeline layout"),
+      bind_group_layouts: &[],
+      push_constant_ranges: &[],
+    });
+
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+      label: Some("random pipeline"),
+      layout: Some(&pipeline_layout),
+      vertex: VertexState {
+        module: &shader,
+        entry_point: Some("vs_main"),
+        buffers: &[],
+        compilation_options: Default::default(),
+      },
+      primitive: wgpu::PrimitiveState {
+        topology: wgpu::PrimitiveTopology::TriangleList,
+        strip_index_format: None,
+        front_face: wgpu::FrontFace::Ccw,
+        cull_mode: Some(wgpu::Face::Back),
+        polygon_mode: wgpu::PolygonMode::Fill,
+        unclipped_depth: false,
+        conservative: false,
+      },
+      depth_stencil: None,
+      multisample: wgpu::MultisampleState {
+        count: 1,
+        mask: !0,
+        alpha_to_coverage_enabled: false,
+      },
+      fragment: Some(wgpu::FragmentState {
+        module: &shader,
+        entry_point: Some("fs_main"),
+        targets: &[Some(wgpu::ColorTargetState {
+          format: config.format,
+          blend: Some(wgpu::BlendState::REPLACE),
+          write_mask: wgpu::ColorWrites::ALL,
+        })],
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+      }),
+      multiview: None,
+      cache: None,
+    });
+    pipeline
   }
 
   pub fn resize(&mut self, size: PhysicalSize<u32>) {
@@ -89,20 +141,25 @@ impl<'a> State<'a> {
         label: Some("Render Encoder"),
       });
 
-    encoder.begin_render_pass(&RenderPassDescriptor {
-      label: Some("Clear Pass"),
-      color_attachments: &[Some(RenderPassColorAttachment {
-        view: &view,
-        resolve_target: None,
-        ops: Operations {
-          load: wgpu::LoadOp::Clear(Color::RED),
-          store: wgpu::StoreOp::Store,
-        },
-      })],
-      depth_stencil_attachment: None,
-      timestamp_writes: None,
-      occlusion_query_set: None,
-    });
+    {
+      let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+        label: Some("Clear Pass"),
+        color_attachments: &[Some(RenderPassColorAttachment {
+          view: &view,
+          resolve_target: None,
+          ops: Operations {
+            load: wgpu::LoadOp::Clear(Color::RED),
+            store: wgpu::StoreOp::Store,
+          },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+      });
+
+      pass.set_pipeline(&self.render_pipeline);
+      pass.draw(0..3, 0..1);
+    }
 
     self.queue.submit(std::iter::once(encoder.finish()));
     output.present();

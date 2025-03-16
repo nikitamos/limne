@@ -20,8 +20,9 @@ pub trait Vector3D<T>:
   fn z(&self) -> T;
 }
 
+#[repr(C)]
 #[derive(Clone)]
-struct NumVector3D<T: Copy> {
+pub struct NumVector3D<T: Copy> {
   x: T,
   y: T,
   z: T,
