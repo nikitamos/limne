@@ -1,4 +1,4 @@
-use std::{default, sync::Arc};
+use std::sync::Arc;
 use wgpu::{
   Backends, Color, CommandEncoderDescriptor, Device, Instance, InstanceDescriptor, Operations,
   PipelineLayoutDescriptor, Queue, RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline,
@@ -12,17 +12,17 @@ use super::simulation::Simulation;
 pub(super) struct State<'a> {
   instance: Instance,
   surface: Surface<'a>,
-  device: Device,
+  pub(super) device: Device,
   queue: Queue,
   config: SurfaceConfiguration,
   render_pipeline: RenderPipeline,
-  simulation: Option<Box<dyn Simulation>>
+  simulation: Option<Box<dyn Simulation>>,
 }
 
 impl<'a> State<'a> {
   pub async fn create(window: Arc<Window>) -> Self {
     let instance = wgpu::Instance::new(&InstanceDescriptor {
-      backends: Backends::PRIMARY,
+      backends: Backends::all(),
       ..Default::default()
     });
     let surface = instance
@@ -152,7 +152,7 @@ impl<'a> State<'a> {
           view: &view,
           resolve_target: None,
           ops: Operations {
-            load: wgpu::LoadOp::Clear(Color::RED),
+            load: wgpu::LoadOp::Clear(Color::WHITE),
             store: wgpu::StoreOp::Store,
           },
         })],
@@ -162,16 +162,27 @@ impl<'a> State<'a> {
       });
 
       pass.set_pipeline(&self.render_pipeline);
-      pass.draw(0..3, 0..1);
     }
 
-    self.queue.submit(std::iter::once(encoder.finish()));
+    let commands = std::iter::once(encoder.finish());
+    let a = self.simulation.as_ref().map(|sim| {
+      let sim_encoder = self
+        .device
+        .create_command_encoder(&CommandEncoderDescriptor {
+          label: sim.encoder_label(),
+        });
+      sim.run_passes(sim_encoder, &view)
+    });
+
+    self.queue.submit(commands.chain(a));
     output.present();
 
     Ok(())
   }
 
   pub fn set_simulation(&mut self, sim: Box<dyn Simulation>) -> Option<Box<dyn Simulation>> {
+    let mut sim = sim;
+    sim.init_pipelines(&self.device, self.config.format);
     self.simulation.replace(sim)
   }
 }
