@@ -9,6 +9,8 @@ use winit::{
   window::{Window, WindowAttributes},
 };
 
+use super::simulation::two_d;
+
 pub struct App<'a> {
   runtime: Runtime,
   window: Option<Arc<Window>>,

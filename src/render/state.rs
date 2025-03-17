@@ -7,6 +7,8 @@ use wgpu::{
 };
 use winit::{dpi::PhysicalSize, window::Window};
 
+use super::simulation::Simulation;
+
 pub(super) struct State<'a> {
   instance: Instance,
   surface: Surface<'a>,
@@ -14,6 +16,7 @@ pub(super) struct State<'a> {
   queue: Queue,
   config: SurfaceConfiguration,
   render_pipeline: RenderPipeline,
+  simulation: Option<Box<dyn Simulation>>
 }
 
 impl<'a> State<'a> {
@@ -70,6 +73,7 @@ impl<'a> State<'a> {
       queue,
       config,
       render_pipeline,
+      simulation: None
     }
   }
 
@@ -165,5 +169,9 @@ impl<'a> State<'a> {
     output.present();
 
     Ok(())
+  }
+
+  pub fn set_simulation(&mut self, sim: Box<dyn Simulation>) -> Option<Box<dyn Simulation>> {
+    self.simulation.replace(sim)
   }
 }

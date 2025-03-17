@@ -16,16 +16,19 @@ pub trait Vector3D<T>:
     self.dot(self)
   }
   fn x(&self) -> T;
+  fn mx(&mut self) -> &mut T;
   fn y(&self) -> T;
+  fn my(&mut self) -> &mut T;
   fn z(&self) -> T;
+  fn mz(&mut self) -> &mut T;
 }
 
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct NumVector3D<T: Copy> {
-  x: T,
-  y: T,
-  z: T,
+  pub x: T,
+  pub y: T,
+  pub z: T,
 }
 
 impl<T: Copy + Div<Output = T>> Div<T> for NumVector3D<T> {
@@ -105,6 +108,18 @@ where
 
   fn z(&self) -> T {
     self.z
+  }
+
+  fn mx(&mut self) -> &mut T {
+    &mut self.x
+  }
+
+  fn my(&mut self) -> &mut T {
+    &mut self.y
+  }
+
+  fn mz(&mut self) -> &mut T {
+    &mut self.z
   }
 }
 
