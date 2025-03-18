@@ -32,6 +32,9 @@ pub mod bindings {
 }
 
 impl<'a> State<'a> {
+  pub fn update(&mut self, dt: f32) {
+    self.simulation.as_mut().map(|s| s.step(dt));
+  }
   pub async fn create(window: Arc<Window>) -> Self {
     let instance = wgpu::Instance::new(&InstanceDescriptor {
       backends: Backends::VULKAN,
@@ -235,6 +238,7 @@ impl<'a> State<'a> {
         .create_command_encoder(&CommandEncoderDescriptor {
           label: sim.encoder_label(),
         });
+      sim.write_buffers(&self.queue);
       sim.run_passes(sim_encoder, &self.global_bind, &view)
     });
 

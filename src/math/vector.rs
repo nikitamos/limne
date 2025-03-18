@@ -1,4 +1,4 @@
-use std::ops::{Add, Div, Mul, Sub};
+use std::ops::{Add, AddAssign, Div, Mul, Sub};
 
 /// Vector in an orthonormal right-hand 3D basis
 pub trait Vector3D<T>:
@@ -24,11 +24,22 @@ pub trait Vector3D<T>:
 }
 
 #[repr(C)]
-#[derive(Clone, Default)]
+#[derive(Copy, Clone, Default, Debug,)]
 pub struct NumVector3D<T: Copy> {
   pub x: T,
   pub y: T,
   pub z: T,
+}
+
+impl<T> AddAssign<NumVector3D<T>> for NumVector3D<T>
+where
+  T: Copy + AddAssign<T>,
+{
+  fn add_assign(&mut self, rhs: NumVector3D<T>) {
+    self.x += rhs.x;
+    self.y += rhs.y;
+    self.z += rhs.z;
+  }
 }
 
 impl<T: Copy + Div<Output = T>> Div<T> for NumVector3D<T> {

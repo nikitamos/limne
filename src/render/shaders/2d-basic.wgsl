@@ -16,14 +16,14 @@ var <uniform> size: vec2<f32>;
 const COUNT = 500.0;
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-  var col: vec4<f32> = vec4(1.0, 1.0, 1.0, 1.0);
+  var col: vec4<f32> = vec4(0.0, 0.133, 0.4, 1.0);
   let inst = f32(in.iid);
-  var safd: vec4<f32> = clamp((inst / COUNT) * col, vec4(0.0,0.0,0.0,1.0), vec4(1.0,1.0,1.0,1.0));
-  if (in.idx != 0) {
-    safd = vec4<f32>(0.0,1.0,0.0,1.0);
-  }
+  // var safd: vec4<f32> = clamp((inst / COUNT) * col, vec4(0.0,0.0,0.0,1.0), vec4(1.0,1.0,1.0,1.0));
+  // if (in.idx != 0) {
+  //   safd = vec4<f32>(0.0,1.0,0.0,1.0);
+  // }
   
-  return safd;
+  return col;
 }
 
 

@@ -1,5 +1,5 @@
 use crate::render::state::*;
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 use tokio::runtime::Runtime;
 
 use winit::{
@@ -15,6 +15,7 @@ pub struct App<'a> {
   runtime: Runtime,
   window: Option<Arc<Window>>,
   state: Option<State<'a>>,
+  time: Instant,
 }
 
 impl<'a> ApplicationHandler for App<'a> {
@@ -29,7 +30,7 @@ impl<'a> ApplicationHandler for App<'a> {
       self
         .state
         .replace(self.runtime.block_on(State::create(self.window())));
-      self.map_state(|s| s.set_simulation(Box::new(two_d::DefaultSim::new(1000, &s.device, size))));
+      self.map_state(|s| s.set_simulation(Box::new(two_d::DefaultSim::new(500, &s.device, size))));
     }
   }
 
@@ -51,8 +52,9 @@ impl<'a> ApplicationHandler for App<'a> {
       } if state.is_pressed() => println!("ESC pressed"),
       RedrawRequested => {
         self.window().request_redraw();
+        let dt = (Instant::now() - self.time).as_secs_f32();
 
-        match self.map_state(|s| s.render()) {
+        match self.map_state(|s| {s.update(dt); s.render()}) {
           Ok(()) => (),
           Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
             let size = self.window().inner_size();
@@ -62,6 +64,7 @@ impl<'a> ApplicationHandler for App<'a> {
           Err(wgpu::SurfaceError::Timeout) => (),
           _ => event_loop.exit(),
         }
+        self.time = Instant::now()
       }
       CloseRequested => {
         self.state = None;
@@ -80,6 +83,7 @@ impl App<'_> {
       runtime: tokio::runtime::Builder::new_multi_thread().build().unwrap(),
       window: None,
       state: None,
+      time: Instant::now()
     }
   }
   fn window(&self) -> Arc<Window> {

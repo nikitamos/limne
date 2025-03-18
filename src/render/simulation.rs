@@ -64,21 +64,36 @@ pub trait Simulation {
 }
 
 pub mod two_d {
+  use std::collections::HashMap;
+
   use rand::Rng;
   use wgpu::{
-    util::BufferInitDescriptor, vertex_attr_array, MultisampleState, RenderPassColorAttachment,
-    RenderPipelineDescriptor,
+    util::BufferInitDescriptor, vertex_attr_array, Color, MultisampleState,
+    RenderPassColorAttachment, RenderPipelineDescriptor,
   };
   use winit::dpi::PhysicalSize;
 
   use super::*;
 
-  pub struct DefaultSim {
-    positions: ParticleVector<f32>,
-    pipeline: Option<wgpu::RenderPipeline>,
-    instance_buf: Option<wgpu::Buffer>,
+  #[derive(Default, Clone)]
+  struct DefaultCell {
+    pub density: f32,
+    pub velocity: NumVector3D<f32>,
+    pub count: u32,
   }
 
+  pub struct DefaultSim {
+    positions: ParticleVector<f32>,
+    cells: Vec<DefaultCell>,
+    pipeline: Option<wgpu::RenderPipeline>,
+    instance_buf: Option<wgpu::Buffer>,
+    x_cells: usize,
+    y_cells: usize,
+    height: f32,
+    width: f32,
+  }
+
+  const CELL_SIZE: u32 = 50;
   impl DefaultSim {
     pub fn new(count: usize, device: &wgpu::Device, size: PhysicalSize<u32>) -> Self {
       let mut positions: Vec<NumVector3D<f32>> = vec![Default::default(); count];
@@ -91,11 +106,64 @@ pub mod two_d {
         p.y = rng.sample(rand::distr::Uniform::new(-height, height).unwrap());
       }
 
-      Self {
+      // Create cells
+      let x_cells = size.width.div_ceil(CELL_SIZE) as usize;
+      let y_cells = size.width.div_ceil(CELL_SIZE) as usize;
+
+      let mut cells = vec![DefaultCell::default(); x_cells * y_cells];
+      const VEL_BOUND: f32 = 700.0;
+      for c in cells.iter_mut() {
+        c.velocity.x = rng.sample(rand::distr::Uniform::new(-VEL_BOUND, VEL_BOUND).unwrap());
+        c.velocity.y = rng.sample(rand::distr::Uniform::new(-VEL_BOUND, VEL_BOUND).unwrap());
+      }
+
+      let mut out = Self {
         positions: positions.into(),
         pipeline: None,
-        instance_buf: None
+        instance_buf: None,
+        x_cells,
+        y_cells,
+        cells,
+        height,
+        width
+      };
+
+      for i in 0..x_cells {
+        out.cells[i].velocity = Default::default();
+        out.cells[(y_cells - 1) * x_cells + i] = Default::default();
       }
+      for j in 1..(y_cells - 1) {
+        out.cells[j * (x_cells - 1)] = Default::default();
+        out.cells[(j * x_cells) - 1] = Default::default();
+      }
+
+      out
+    }
+    fn get_cell(&self, pos: NumVector3D<f32>) -> (DefaultCell, (usize, usize)) {
+      let idx = (
+        (((pos.x + self.width / 2.0) / (CELL_SIZE as f32)) as usize).clamp(0, self.x_cells - 1),
+        (((pos.y + self.height / 2.0) / (CELL_SIZE as f32)) as usize).clamp(0, self.y_cells - 1),
+      );
+      (
+        self
+          .cells
+          .get(idx.1 * self.x_cells + idx.0)
+          .unwrap()
+          .clone(),
+        idx,
+      )
+    }
+    fn cell_mut(&mut self, pos: NumVector3D<f32>) -> (&mut DefaultCell, (usize, usize)) {
+      let idx = (
+        (((pos.x + self.width / 2.0) / (CELL_SIZE as f32)) as usize)
+          .clamp(0, self.positions.len() - 1),
+        (((pos.y + self.height / 2.0) / (CELL_SIZE as f32)) as usize)
+          .clamp(0, self.positions.len() - 1),
+      );
+      (
+        self.cells.get_mut(idx.1 + self.x_cells * idx.0).unwrap(),
+        idx,
+      )
     }
   }
 
@@ -107,7 +175,12 @@ pub mod two_d {
 
   impl Simulation for DefaultSim {
     fn step(&mut self, dt: f32) {
-      todo!()
+      // for now we consider that each particle velocity is just deictated by the containing cell
+      let len = self.positions.len();
+      for i in 0..len {
+        let c = self.get_cell(self.positions[i]).0;
+        self.positions[i] += c.velocity * dt;
+      }
     }
 
     fn run_passes(
@@ -133,7 +206,7 @@ pub mod two_d {
         pass.set_bind_group(0, global_bind_group, &[]);
         pass.draw(0..3, 0..(self.positions.len() as u32));
       }
-
+      println!("DefSim pass!");
       encoder.finish()
     }
 
