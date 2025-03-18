@@ -1,21 +1,14 @@
 use core::slice;
 use std::ops::{Deref, DerefMut};
 
-use wgpu::{
-  core::device::queue, util::DeviceExt, CommandBuffer, CommandEncoder, VertexBufferLayout,
-};
+use wgpu::{util::DeviceExt, CommandBuffer, CommandEncoder, VertexBufferLayout};
 
-use crate::math::vector::{NumVector3D, Vector3D};
+use crate::math::vector::NumVector3D;
 
 pub trait AsBuffer {
   fn as_bytes_buffer(&self) -> &[u8];
 }
-pub trait VertexFormat {
-  const ATTR: [wgpu::VertexAttribute; 1];
-  fn vertex_format() -> &'static [wgpu::VertexAttribute] {
-    &Self::ATTR
-  }
-}
+
 struct ParticleVector<T: Copy>(Vec<NumVector3D<T>>);
 
 impl<T: Copy> From<Vec<NumVector3D<T>>> for ParticleVector<T> {
@@ -37,22 +30,17 @@ impl<T: Copy> DerefMut for ParticleVector<T> {
   }
 }
 
-impl<T: Copy> AsBuffer for ParticleVector<T>
-where
-  NumVector3D<T>: VertexFormat,
-{
+impl<T: Copy> AsBuffer for ParticleVector<T> {
   fn as_bytes_buffer(&self) -> &[u8] {
     let item_size = std::mem::size_of::<NumVector3D<T>>();
     unsafe { slice::from_raw_parts(self.as_slice().as_ptr().cast(), self.len() * item_size) }
   }
 }
 
-impl VertexFormat for NumVector3D<f32> {
-  const ATTR: [wgpu::VertexAttribute; 1] = [wgpu::VertexAttribute {
-    offset: 0,
-    format: wgpu::VertexFormat::Float32x3,
-    shader_location: 0,
-  }];
+impl<const N: usize> AsBuffer for [f32; N] {
+  fn as_bytes_buffer(&self) -> &[u8] {
+    unsafe { slice::from_raw_parts(self.as_ptr().cast(), N * std::mem::size_of::<f32>()) }
+  }
 }
 
 pub trait Simulation {
@@ -60,8 +48,18 @@ pub trait Simulation {
   fn encoder_label<'a>(&self) -> Option<&'a str> {
     Some("Simulation encoder")
   }
-  fn init_pipelines(&mut self, device: &wgpu::Device, format: wgpu::TextureFormat);
-  fn run_passes(&self, encoder: CommandEncoder, view: &wgpu::TextureView) -> CommandBuffer;
+  fn init_pipelines(
+    &mut self,
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    global_layout: &wgpu::BindGroupLayout,
+  );
+  fn run_passes(
+    &self,
+    encoder: CommandEncoder,
+    global_bind_group: &wgpu::BindGroup,
+    view: &wgpu::TextureView,
+  ) -> CommandBuffer;
   fn write_buffers(&self, queue: &wgpu::Queue);
 }
 
@@ -71,6 +69,7 @@ pub mod two_d {
     util::BufferInitDescriptor, vertex_attr_array, MultisampleState, RenderPassColorAttachment,
     RenderPipelineDescriptor,
   };
+  use winit::dpi::PhysicalSize;
 
   use super::*;
 
@@ -81,26 +80,16 @@ pub mod two_d {
   }
 
   impl DefaultSim {
-    pub fn new(count: usize, device: &wgpu::Device) -> Self {
+    pub fn new(count: usize, device: &wgpu::Device, size: PhysicalSize<u32>) -> Self {
       let mut positions: Vec<NumVector3D<f32>> = vec![Default::default(); count];
       let mut rng = rand::rng();
-      if count == 2 {
-        positions[0] = NumVector3D {
-          x: 0.5,
-          y: 0.5,
-          z: 0.0,
-        };
-        positions[1] = NumVector3D {
-          x: -0.5,
-          y: -0.5,
-          z: 0.0,
-        };
-      } else {
-        for p in positions.iter_mut() {
-        p.x = rng.sample(rand::distr::Uniform::new(-1.0f32, 1.0f32).unwrap());
-        p.y = rng.sample(rand::distr::Uniform::new(-1.0f32, 1.0f32).unwrap());
-        p.z = rng.sample(rand::distr::Uniform::new(-1.0f32, 1.0f32).unwrap());
-      }}
+      let width = size.width as f32;
+      let height = size.height as f32;
+
+      for p in positions.iter_mut() {
+        p.x = rng.sample(rand::distr::Uniform::new(-width, width).unwrap());
+        p.y = rng.sample(rand::distr::Uniform::new(-height, height).unwrap());
+      }
 
       Self {
         positions: positions.into(),
@@ -124,6 +113,7 @@ pub mod two_d {
     fn run_passes(
       &self,
       mut encoder: wgpu::CommandEncoder,
+      global_bind_group: &wgpu::BindGroup,
       view: &wgpu::TextureView,
     ) -> wgpu::CommandBuffer {
       {
@@ -140,16 +130,22 @@ pub mod two_d {
         });
         pass.set_pipeline(self.pipeline.as_ref().unwrap());
         pass.set_vertex_buffer(0, self.instance_buf.as_ref().unwrap().slice(..));
+        pass.set_bind_group(0, global_bind_group, &[]);
         pass.draw(0..3, 0..(self.positions.len() as u32));
       }
 
       encoder.finish()
     }
 
-    fn init_pipelines(&mut self, device: &wgpu::Device, format: wgpu::TextureFormat) {
+    fn init_pipelines(
+      &mut self,
+      device: &wgpu::Device,
+      format: wgpu::TextureFormat,
+      global_layout: &wgpu::BindGroupLayout,
+    ) {
       let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[],
+            bind_group_layouts: &[global_layout],
             push_constant_ranges: &[],
         });
 

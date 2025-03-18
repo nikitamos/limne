@@ -1,13 +1,16 @@
-use std::sync::Arc;
+use bindings::{VIEWPORT_SIZE_LOCATION, VIEWPORT_SIZE_SIZE};
+use std::{num::NonZero, sync::Arc};
 use wgpu::{
-  Backends, Color, CommandEncoderDescriptor, Device, Instance, InstanceDescriptor, Operations,
+  Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
+  BindGroupLayoutDescriptor, BindGroupLayoutEntry, Buffer, BufferBinding, BufferDescriptor,
+  BufferUsages, Color, CommandEncoderDescriptor, Device, Instance, InstanceDescriptor, Operations,
   PipelineLayoutDescriptor, Queue, RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline,
-  RenderPipelineDescriptor, RequestAdapterOptions, Surface, SurfaceConfiguration,
+  RenderPipelineDescriptor, RequestAdapterOptions, ShaderStages, Surface, SurfaceConfiguration,
   TextureViewDescriptor, VertexState,
 };
 use winit::{dpi::PhysicalSize, window::Window};
 
-use super::simulation::Simulation;
+use super::simulation::{AsBuffer, Simulation};
 
 pub(super) struct State<'a> {
   instance: Instance,
@@ -15,16 +18,26 @@ pub(super) struct State<'a> {
   pub(super) device: Device,
   queue: Queue,
   config: SurfaceConfiguration,
-  render_pipeline: RenderPipeline,
+  clear_pipeline: RenderPipeline,
   simulation: Option<Box<dyn Simulation>>,
+  global_layout: BindGroupLayout,
+  global_bind: BindGroup,
+  viewport_buf: Buffer,
+}
+
+pub mod bindings {
+  pub const GLOBAL_BIND_GROUP: u32 = 0;
+  pub const VIEWPORT_SIZE_LOCATION: u32 = 0;
+  pub const VIEWPORT_SIZE_SIZE: u64 = 2u64 * std::mem::size_of::<f32>() as u64;
 }
 
 impl<'a> State<'a> {
   pub async fn create(window: Arc<Window>) -> Self {
     let instance = wgpu::Instance::new(&InstanceDescriptor {
-      backends: Backends::all(),
+      backends: Backends::VULKAN,
       ..Default::default()
     });
+
     let surface = instance
       .create_surface(Arc::clone(&window))
       .expect("Unable to create a surface");
@@ -64,24 +77,69 @@ impl<'a> State<'a> {
     };
     surface.configure(&device, &config);
 
-    println!("Using adapter {}", adapter.get_info().name);
-    let render_pipeline = Self::create_pipeline(&device, &config);
+    println!(
+      "Adapter: {}\n Backend: {}",
+      adapter.get_info().name,
+      adapter.get_info().backend.to_str().to_uppercase()
+    );
+
+    let viewport_buf = device.create_buffer(&BufferDescriptor {
+      label: None,
+      size: VIEWPORT_SIZE_SIZE,
+      usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+      mapped_at_creation: false,
+    });
+
+    let global_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+      label: Some("Global Binding Group"),
+      entries: &[BindGroupLayoutEntry {
+        binding: VIEWPORT_SIZE_LOCATION,
+        visibility: ShaderStages::all(),
+        ty: wgpu::BindingType::Buffer {
+          ty: wgpu::BufferBindingType::Uniform,
+          has_dynamic_offset: false,
+          min_binding_size: NonZero::new(2u64 * std::mem::size_of::<f32>() as u64),
+        },
+        count: None,
+      }],
+    });
+    let global_bind = device.create_bind_group(&BindGroupDescriptor {
+      label: Some("Global Bind Group"),
+      layout: &global_layout,
+      entries: &[BindGroupEntry {
+        binding: VIEWPORT_SIZE_LOCATION,
+        resource: wgpu::BindingResource::Buffer(BufferBinding {
+          buffer: &viewport_buf,
+          offset: 0,
+          size: NonZero::new(VIEWPORT_SIZE_SIZE),
+        }),
+      }],
+    });
+    let render_pipeline = Self::create_pipeline(&device, &config, &[&global_layout]);
+
     Self {
       instance,
       surface,
       device,
       queue,
       config,
-      render_pipeline,
-      simulation: None
+      clear_pipeline: render_pipeline,
+      simulation: None,
+      global_bind,
+      viewport_buf,
+      global_layout,
     }
   }
 
-  fn create_pipeline(device: &Device, config: &SurfaceConfiguration) -> RenderPipeline {
+  fn create_pipeline(
+    device: &Device,
+    config: &SurfaceConfiguration,
+    layouts: &[&BindGroupLayout],
+  ) -> RenderPipeline {
     let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
       label: Some("Render pipeline layout"),
-      bind_group_layouts: &[],
+      bind_group_layouts: layouts,
       push_constant_ranges: &[],
     });
 
@@ -161,8 +219,14 @@ impl<'a> State<'a> {
         occlusion_query_set: None,
       });
 
-      pass.set_pipeline(&self.render_pipeline);
+      pass.set_pipeline(&self.clear_pipeline);
     }
+
+    self.queue.write_buffer(
+      &self.viewport_buf,
+      0,
+      [self.config.width as f32, self.config.height as f32].as_bytes_buffer(),
+    );
 
     let commands = std::iter::once(encoder.finish());
     let a = self.simulation.as_ref().map(|sim| {
@@ -171,7 +235,7 @@ impl<'a> State<'a> {
         .create_command_encoder(&CommandEncoderDescriptor {
           label: sim.encoder_label(),
         });
-      sim.run_passes(sim_encoder, &view)
+      sim.run_passes(sim_encoder, &self.global_bind, &view)
     });
 
     self.queue.submit(commands.chain(a));
@@ -182,7 +246,7 @@ impl<'a> State<'a> {
 
   pub fn set_simulation(&mut self, sim: Box<dyn Simulation>) -> Option<Box<dyn Simulation>> {
     let mut sim = sim;
-    sim.init_pipelines(&self.device, self.config.format);
+    sim.init_pipelines(&self.device, self.config.format, &self.global_layout);
     self.simulation.replace(sim)
   }
 }

@@ -25,10 +25,11 @@ impl<'a> ApplicationHandler for App<'a> {
           .create_window(WindowAttributes::default())
           .expect("Error creating a window"),
       ));
+      let size = self.window().inner_size();
       self
         .state
         .replace(self.runtime.block_on(State::create(self.window())));
-      self.map_state(|s| s.set_simulation(Box::new(two_d::DefaultSim::new(1000, &s.device))));
+      self.map_state(|s| s.set_simulation(Box::new(two_d::DefaultSim::new(1000, &s.device, size))));
     }
   }
 
