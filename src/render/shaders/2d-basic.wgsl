@@ -3,27 +3,29 @@ struct Input {
   @builtin(instance_index) iid: u32,
   @location(0) pos: vec3<f32>,
 };
+struct VertexOutput {
+    @builtin(position) pos: vec4<f32>,
+    // Vertex index
+    @location(0) idx: u32,
+    @location(1) iid: u32,
+};
 
 @group(0) @binding(0)
 var <uniform> size: vec2<f32>;
 
+const COUNT = 500.0;
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-  var col: vec4<f32> = vec4(0.0, 0.0, 0.0, 1.0);
-  switch (in.iid) {
-    case 0u: {col.x = 1.0;}
-    default: {col = vec4(0.0, 0.133, 0.5, 1.0);}
+  var col: vec4<f32> = vec4(1.0, 1.0, 1.0, 1.0);
+  let inst = f32(in.iid);
+  var safd: vec4<f32> = clamp((inst / COUNT) * col, vec4(0.0,0.0,0.0,1.0), vec4(1.0,1.0,1.0,1.0));
+  if (in.idx != 0) {
+    safd = vec4<f32>(0.0,1.0,0.0,1.0);
   }
-  return col;
+  
+  return safd;
 }
 
-struct VertexOutput {
-    @builtin(position) pos: vec4<f32>,
-    // Instance index
-    @location(0) iid: u32,
-    // Vertex index
-    @location(1) idx: u32
-};
 
 const delta = vec2(0.0, 20.0);
 const PI = 3.1515926535898;
@@ -41,17 +43,10 @@ fn vs_main(
 
   var out: VertexOutput;
   out.pos = vec4(vec2(in.pos.x, in.pos.y) + d, 0.0, 1.0);
-  // if (in.idx == 0) {
-    // out.pos = vec4(pos + d, 0.0, 1.0);
-  // } else if (in.idx == 1) {
-  //   out.pos = vec4(pos, 0.0,  1.0);
-  // } else {
-  //   out.pos = vec4(pos + d, 0.0, 1.0);
-  // }
   out.pos.y /= size.y;
   out.pos.x /= size.x;
 
-  out.iid = in.iid;
   out.idx = in.idx;
+  out.iid = in.iid;
   return out;
 }
