@@ -63,23 +63,29 @@ pub trait Simulation {
   fn write_buffers(&self, queue: &wgpu::Queue);
 }
 
+fn make_vec_buf<T>(v: &Vec<T>) -> &[u8] {
+  unsafe { slice::from_raw_parts(v[..].as_ptr().cast(), v.len() * std::mem::size_of::<T>()) }
+}
+
 pub mod two_d {
-  use std::collections::HashMap;
+  use core::f32;
+  use std::num::NonZero;
 
   use rand::Rng;
   use wgpu::{
-    util::BufferInitDescriptor, vertex_attr_array, Color, MultisampleState,
-    RenderPassColorAttachment, RenderPipelineDescriptor,
+    util::BufferInitDescriptor, vertex_attr_array, MultisampleState, RenderPassColorAttachment,
+    RenderPipelineDescriptor,
   };
   use winit::dpi::PhysicalSize;
 
   use super::*;
 
+  #[repr(C)]
   #[derive(Default, Clone)]
   struct DefaultCell {
-    pub density: f32,
     pub velocity: NumVector3D<f32>,
-    pub count: u32,
+    pub pressure: f32,
+    pub count: f32,
   }
 
   pub struct DefaultSim {
@@ -87,6 +93,9 @@ pub mod two_d {
     cells: Vec<DefaultCell>,
     pipeline: Option<wgpu::RenderPipeline>,
     instance_buf: Option<wgpu::Buffer>,
+    cells_buf: Option<wgpu::Buffer>,
+    celldims_buf: Option<wgpu::Buffer>,
+    bind_group: Option<wgpu::BindGroup>,
     x_cells: usize,
     y_cells: usize,
     height: f32,
@@ -107,20 +116,25 @@ pub mod two_d {
       }
 
       // Create cells
-      let x_cells = size.width.div_ceil(CELL_SIZE) as usize;
-      let y_cells = size.width.div_ceil(CELL_SIZE) as usize;
+      let x_cells = (2 * size.width).div_ceil(CELL_SIZE) as usize;
+      let y_cells = (2 * size.height).div_ceil(CELL_SIZE) as usize;
 
       let mut cells = vec![DefaultCell::default(); x_cells * y_cells];
       const VEL_BOUND: f32 = 700.0;
+      let distr = rand::distr::Uniform::new(0.0f32, f32::consts::TAU).unwrap();
       for c in cells.iter_mut() {
-        c.velocity.x = rng.sample(rand::distr::Uniform::new(-VEL_BOUND, VEL_BOUND).unwrap());
-        c.velocity.y = rng.sample(rand::distr::Uniform::new(-VEL_BOUND, VEL_BOUND).unwrap());
+        let angle = rng.sample(distr);
+        c.velocity.x = angle.cos() * VEL_BOUND;
+        c.velocity.y = angle.sin() * VEL_BOUND;
       }
 
       let mut out = Self {
         positions: positions.into(),
         pipeline: None,
+        bind_group: None,
         instance_buf: None,
+        cells_buf: None,
+        celldims_buf: None,
         x_cells,
         y_cells,
         cells,
@@ -141,8 +155,8 @@ pub mod two_d {
     }
     fn get_cell(&self, pos: NumVector3D<f32>) -> (DefaultCell, (usize, usize)) {
       let idx = (
-        (((pos.x + self.width / 2.0) / (CELL_SIZE as f32)) as usize).clamp(0, self.x_cells - 1),
-        (((pos.y + self.height / 2.0) / (CELL_SIZE as f32)) as usize).clamp(0, self.y_cells - 1),
+        (((pos.x + self.width) / (CELL_SIZE as f32)) as usize).clamp(0, self.x_cells - 1),
+        (((pos.y + self.height) / (CELL_SIZE as f32)) as usize).clamp(0, self.y_cells - 1),
       );
       (
         self
@@ -204,6 +218,7 @@ pub mod two_d {
         pass.set_pipeline(self.pipeline.as_ref().unwrap());
         pass.set_vertex_buffer(0, self.instance_buf.as_ref().unwrap().slice(..));
         pass.set_bind_group(0, global_bind_group, &[]);
+        pass.set_bind_group(1, &self.bind_group, &[]);
         pass.draw(0..3, 0..(self.positions.len() as u32));
       }
       println!("DefSim pass!");
@@ -216,12 +231,49 @@ pub mod two_d {
       format: wgpu::TextureFormat,
       global_layout: &wgpu::BindGroupLayout,
     ) {
+      let cell_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Cell binding layout"),
+        entries: &[
+          wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::all(),
+            ty: wgpu::BindingType::Buffer {
+              ty: wgpu::BufferBindingType::Storage { read_only: true },
+              has_dynamic_offset: false,
+              min_binding_size: None,
+            },
+            count: None,
+          },
+          wgpu::BindGroupLayoutEntry {
+            binding: 1,
+            visibility: wgpu::ShaderStages::all(),
+            ty: wgpu::BindingType::Buffer {
+              ty: wgpu::BufferBindingType::Storage { read_only: true },
+              has_dynamic_offset: false,
+              min_binding_size: None,
+            },
+            count: None,
+          },
+          // wgpu::BindGroupLayoutEntry {
+          //   binding: 2,
+          //   visibility: wgpu::ShaderStages::all(),
+          //   ty: wgpu::BindingType::Buffer {
+          //     ty: wgpu::BufferBindingType::Storage { read_only: true },
+          //     has_dynamic_offset: false,
+          //     min_binding_size: None,
+          //   },
+          //   count: None,
+          // },
+        ],
+      });
+
       let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[global_layout],
+            bind_group_layouts: &[global_layout, &cell_bg_layout],
             push_constant_ranges: &[],
         });
 
+      // PARTICLE DRAWING (geometry)
       let instance_buf = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("Instance buffer"),
         contents: self.positions.as_bytes_buffer(),
@@ -245,7 +297,7 @@ pub mod two_d {
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
             front_face: wgpu::FrontFace::Ccw,
-            cull_mode: Some(wgpu::Face::Back),
+            cull_mode: None,
             unclipped_depth: false,
             polygon_mode: wgpu::PolygonMode::Fill,
             conservative: false,
@@ -269,8 +321,57 @@ pub mod two_d {
         multiview: None,
         cache: None,
       });
+
+      // CELLS
+      let cell_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Cell Buffer"),
+        size: make_vec_buf(&self.cells).len() as u64,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+      });
+      let celldims_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Cell dimension buffer"),
+        size: 2 * std::mem::size_of::<u32>() as u64 + std::mem::size_of::<f32>() as u64,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+      });
+      let cell_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Cell bind group"),
+        layout: &cell_bg_layout,
+        entries: &[
+          wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+              buffer: &cell_buffer,
+              offset: 0,
+              size: None,
+            }),
+          },
+          wgpu::BindGroupEntry {
+            binding: 1,
+            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+              buffer: &celldims_buf,
+              offset: 0,
+              size: None,
+            }),
+          },
+          // wgpu::BindGroupEntry {
+          //   binding: 2,
+          //   resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+          //     buffer: &cell_buffer,
+          //     offset: 2 * std::mem::size_of::<u32>() as u64,
+          //     size: NonZero::new(std::mem::size_of::<f32>() as u64),
+          //   }),
+          // },
+        ],
+      });
+
       self.instance_buf = Some(instance_buf);
       self.pipeline = Some(pipeline);
+
+      self.cells_buf = Some(cell_buffer);
+      self.celldims_buf = Some(celldims_buf);
+      self.bind_group = Some(cell_bg);
     }
 
     fn write_buffers(&self, queue: &wgpu::Queue) {
@@ -279,6 +380,22 @@ pub mod two_d {
         0,
         self.positions.as_bytes_buffer(),
       );
+      queue.write_buffer(
+        self.cells_buf.as_ref().unwrap(),
+        0,
+        make_vec_buf(&self.cells),
+      );
+      let celldims = (self.x_cells as u32, self.y_cells as u32);
+      // TODO: make sane implementation
+      let a: Vec<_> = celldims
+        .0
+        .to_ne_bytes()
+        .into_iter()
+        .chain(celldims.1.to_ne_bytes().into_iter())
+        .chain((CELL_SIZE as f32).to_ne_bytes().into_iter())
+        .collect();
+
+      queue.write_buffer(self.celldims_buf.as_ref().unwrap(), 0, &a);
     }
   }
 }

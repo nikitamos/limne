@@ -13,6 +13,33 @@ struct VertexOutput {
 @group(0) @binding(0)
 var <uniform> size: vec2<f32>;
 
+struct Cell {
+  vx: f32,
+  vy: f32,
+  vz: f32,
+  pressure: f32,
+  density: f32
+};
+
+struct Grid {
+  // grid: vec2<u32>,
+  w: u32,
+  h: u32,
+  cell_side: f32
+};
+
+@group(1) @binding(0)
+var<storage> cells: array<Cell>;
+@group(1) @binding(1)
+var<storage> grid: Grid;
+
+fn get_cell(world_pos: vec2<f32>) -> Cell {
+  var c: Cell;
+  var ind = clamp(vec2<u32>((world_pos + size) / grid.cell_side), vec2(0u, 0u), vec2(grid.w, grid.h) - vec2(1u, 1u));
+
+  return cells[ind.x + ind.y * grid.w];
+}
+
 const COUNT = 500.0;
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
@@ -39,7 +66,26 @@ fn vs_main(
     cos(angle), sin(angle),
     -sin(angle), cos(angle)
   );
-  var d = rot * delta;
+
+  let cell = get_cell(vec2(in.pos.x, in.pos.y));
+  
+  var speed_angle: f32 = 0;
+  if (cell.vy == 0 && cell.vx <= 0.0) {
+    speed_angle = PI;
+  } else if (cell.vx < 0.0) {
+    speed_angle = PI + atan(cell.vx / cell.vy);
+  } else {
+    speed_angle = atan(cell.vx / cell.vy);
+  }
+
+  let rot2 = mat2x2(
+    cos(speed_angle), sin(speed_angle),
+    -sin(speed_angle), cos(speed_angle)
+  );
+  var d = (rot * rot2) * delta;
+  if (in.idx == 0) {
+    d *= 2.0;
+  }
 
   var out: VertexOutput;
   out.pos = vec4(vec2(in.pos.x, in.pos.y) + d, 0.0, 1.0);

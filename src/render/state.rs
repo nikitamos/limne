@@ -3,10 +3,10 @@ use std::{num::NonZero, sync::Arc};
 use wgpu::{
   Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
   BindGroupLayoutDescriptor, BindGroupLayoutEntry, Buffer, BufferBinding, BufferDescriptor,
-  BufferUsages, Color, CommandEncoderDescriptor, Device, Instance, InstanceDescriptor, Operations,
-  PipelineLayoutDescriptor, Queue, RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline,
-  RenderPipelineDescriptor, RequestAdapterOptions, ShaderStages, Surface, SurfaceConfiguration,
-  TextureViewDescriptor, VertexState,
+  BufferUsages, Color, CommandEncoderDescriptor, Device, DeviceDescriptor, Features, Instance,
+  InstanceDescriptor, Operations, PipelineLayoutDescriptor, Queue, RenderPassColorAttachment,
+  RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, RequestAdapterOptions,
+  ShaderStages, Surface, SurfaceConfiguration, TextureViewDescriptor, VertexState,
 };
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -55,7 +55,10 @@ impl<'a> State<'a> {
       .expect("Unable to create an adapter");
 
     let (device, queue) = adapter
-      .request_device(&Default::default(), None)
+      .request_device(&DeviceDescriptor {
+        required_features: Features::BUFFER_BINDING_ARRAY | Features::STORAGE_RESOURCE_BINDING_ARRAY,
+        ..Default::default()
+      }, None)
       .await
       .expect("unable to create a device");
 
