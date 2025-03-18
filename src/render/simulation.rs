@@ -2,6 +2,7 @@ use core::slice;
 use std::ops::{Deref, DerefMut};
 
 use wgpu::{util::DeviceExt, CommandBuffer, CommandEncoder, VertexBufferLayout};
+use winit::dpi::PhysicalSize;
 
 use crate::math::vector::NumVector3D;
 
@@ -54,6 +55,14 @@ pub trait Simulation {
     format: wgpu::TextureFormat,
     global_layout: &wgpu::BindGroupLayout,
   );
+  fn reinit_pipelines(
+    &mut self,
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    global_layout: &wgpu::BindGroupLayout,
+  ) {
+    self.init_pipelines(device, format, global_layout);
+  }
   fn run_passes(
     &self,
     encoder: CommandEncoder,
@@ -61,6 +70,7 @@ pub trait Simulation {
     view: &wgpu::TextureView,
   ) -> CommandBuffer;
   fn write_buffers(&self, queue: &wgpu::Queue);
+  fn on_surface_resized(&mut self, size: PhysicalSize<u32>);
 }
 
 fn make_vec_buf<T>(v: &Vec<T>) -> &[u8] {
@@ -111,8 +121,8 @@ pub mod two_d {
       let height = size.height as f32;
 
       for p in positions.iter_mut() {
-        p.x = rng.sample(rand::distr::Uniform::new(-width, width).unwrap());
-        p.y = rng.sample(rand::distr::Uniform::new(-height, height).unwrap());
+        p.x = rng.sample(rand::distr::Uniform::new(0.0, width).unwrap());
+        p.y = rng.sample(rand::distr::Uniform::new(0.0, height).unwrap());
       }
 
       // Create cells
@@ -221,7 +231,6 @@ pub mod two_d {
         pass.set_bind_group(1, &self.bind_group, &[]);
         pass.draw(0..3, 0..(self.positions.len() as u32));
       }
-      println!("DefSim pass!");
       encoder.finish()
     }
 
@@ -254,16 +263,6 @@ pub mod two_d {
             },
             count: None,
           },
-          // wgpu::BindGroupLayoutEntry {
-          //   binding: 2,
-          //   visibility: wgpu::ShaderStages::all(),
-          //   ty: wgpu::BindingType::Buffer {
-          //     ty: wgpu::BufferBindingType::Storage { read_only: true },
-          //     has_dynamic_offset: false,
-          //     min_binding_size: None,
-          //   },
-          //   count: None,
-          // },
         ],
       });
 
@@ -355,14 +354,6 @@ pub mod two_d {
               size: None,
             }),
           },
-          // wgpu::BindGroupEntry {
-          //   binding: 2,
-          //   resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-          //     buffer: &cell_buffer,
-          //     offset: 2 * std::mem::size_of::<u32>() as u64,
-          //     size: NonZero::new(std::mem::size_of::<f32>() as u64),
-          //   }),
-          // },
         ],
       });
 
@@ -396,6 +387,33 @@ pub mod two_d {
         .collect();
 
       queue.write_buffer(self.celldims_buf.as_ref().unwrap(), 0, &a);
+    }
+
+    fn on_surface_resized(&mut self, size: PhysicalSize<u32>) {
+      let mut rng = rand::rng();
+      for p in self.positions.iter_mut() {
+        p.x = rng.sample(rand::distr::Uniform::new(0.0, size.width as f32).unwrap());
+        p.y = rng.sample(rand::distr::Uniform::new(0.0, size.height as f32).unwrap());
+      }
+
+      // Create cells
+      let x_cells = (2 * size.width).div_ceil(CELL_SIZE) as usize;
+      let y_cells = (2 * size.height).div_ceil(CELL_SIZE) as usize;
+
+      let mut cells = vec![DefaultCell::default(); x_cells * y_cells];
+      const VEL_BOUND: f32 = 700.0;
+      let direction = rand::distr::Uniform::new(0.0f32, f32::consts::TAU).unwrap();
+      let vel_distr = rand::distr::Uniform::new(20.0, 1000.0).unwrap();
+      for c in cells.iter_mut() {
+        let v = rng.sample(vel_distr);
+        let angle = rng.sample(direction);
+        c.velocity.x = angle.cos() * v;
+        c.velocity.y = angle.sin() * v;
+      }
+
+      self.x_cells = x_cells;
+      self.y_cells = y_cells;
+      self.cells = cells;
     }
   }
 }

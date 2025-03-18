@@ -6,8 +6,9 @@ struct Input {
 struct VertexOutput {
     @builtin(position) pos: vec4<f32>,
     // Vertex index
-    @location(0) idx: u32,
-    @location(1) iid: u32,
+    @location(0) particle_pos: vec3<f32>,
+    @location(1) idx: u32,
+    @location(2) iid: u32,
 };
 
 @group(0) @binding(0)
@@ -40,10 +41,22 @@ fn get_cell(world_pos: vec2<f32>) -> Cell {
   return cells[ind.x + ind.y * grid.w];
 }
 
+fn lerp(a1: f32, a2: f32,
+        b1: f32, b2: f32,
+        a: f32)-> f32 {
+  return b1 + (b2 - b1) * saturate(a / (a2 - a1));
+}
+
 const COUNT = 500.0;
+const TOP_VELOCITY = 1000.0;
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-  var col: vec4<f32> = vec4(0.0, 0.133, 0.4, 1.0);
+  // let cell = get_cell(vec2(in.pos.x, in.pos.y));
+  let cell = get_cell(vec2(in.particle_pos.x, in.particle_pos.y));
+  let len = length(vec2(cell.vx, cell.vy));
+  let r = lerp(0., TOP_VELOCITY, 0.0, 1.0, len);
+
+  var col: vec4<f32> = vec4(r, 0.0, 1.0 - r, 1.0);
   let inst = f32(in.iid);
   // var safd: vec4<f32> = clamp((inst / COUNT) * col, vec4(0.0,0.0,0.0,1.0), vec4(1.0,1.0,1.0,1.0));
   // if (in.idx != 0) {
@@ -54,7 +67,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 
 
-const delta = vec2(0.0, 20.0);
+const delta = vec2(0.0, 10.0);
 const PI = 3.1515926535898;
 
 @vertex
@@ -88,10 +101,27 @@ fn vs_main(
   }
 
   var out: VertexOutput;
-  out.pos = vec4(vec2(in.pos.x, in.pos.y) + d, 0.0, 1.0);
-  out.pos.y /= size.y;
-  out.pos.x /= size.x;
 
+  // Да будут вовек мучены в преисподней грешныя
+  // души еретиков, воеже безцельнаго надругания
+  // над математикой строки co столбцы матриц преместиша.
+
+  // NEW
+  let world_to_clip = transpose(mat3x3(
+    2.0 / size.x,       0.0,      -1.0,
+        0.0,        2.0 / size.y, -1.0,
+        0.0,            0.0,      0.0
+  ));
+  
+  out.pos = vec4(world_to_clip * vec3(in.pos.x+d.x, in.pos.y+d.y, 1.0), 1.0);
+
+  // OLD BEGIN
+  // out.pos = vec4(vec2(in.pos.x, in.pos.y) + d, 0.0, 1.0);
+  // out.pos.y /= size.y;
+  // out.pos.x /= size.x;
+  // OLD END
+
+  out.particle_pos = in.pos;
   out.idx = in.idx;
   out.iid = in.iid;
   return out;
