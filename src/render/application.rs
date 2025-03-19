@@ -32,7 +32,7 @@ impl<'a> ApplicationHandler for App<'a> {
         .state
         .replace(self.runtime.block_on(State::create(self.window())));
       self
-        .map_state(|s| s.set_simulation(Box::new(two_d::DefaultSim::new(10000, &s.device, size))));
+        .map_state(|s| s.set_simulation(Box::new(two_d::DefaultSim::new(65535, &s.device, size))));
     }
   }
 

@@ -82,7 +82,7 @@ pub mod two_d {
   use core::f32;
   use rand::Rng;
   use rayon::prelude::*;
-use wgpu::{
+  use wgpu::{
     util::BufferInitDescriptor, vertex_attr_array, MultisampleState, RenderPassColorAttachment,
     RenderPipelineDescriptor, ShaderStages,
   };
@@ -90,7 +90,7 @@ use wgpu::{
 
   use crate::render::swapchain::{SwapBuffers, SwapBuffersDescriptor};
 
-use super::*;
+  use super::*;
 
   #[repr(C)]
   #[derive(Default, Clone)]
@@ -108,7 +108,7 @@ use super::*;
     instance_buf: Option<wgpu::Buffer>,
     cells_buf: Option<wgpu::Buffer>,
     celldims_buf: Option<wgpu::Buffer>,
-    bind_group: Option<wgpu::BindGroup>,
+    cell_bind_group: Option<wgpu::BindGroup>,
     x_cells: usize,
     y_cells: usize,
     height: f32,
@@ -133,7 +133,7 @@ use super::*;
       let y_cells = (2 * size.height).div_ceil(CELL_SIZE) as usize;
 
       let mut cells = vec![DefaultCell::default(); x_cells * y_cells];
-      const VEL_BOUND: f32 = 700.0;
+      const VEL_BOUND: f32 = 70.0;
       let distr = rand::distr::Uniform::new(0.0f32, f32::consts::TAU).unwrap();
       for c in cells.iter_mut() {
         let angle = rng.sample(distr);
@@ -141,16 +141,32 @@ use super::*;
         c.velocity.y = angle.sin() * VEL_BOUND;
       }
 
+      for i in 0..y_cells {
+        cells[i].velocity.y = 0.0;
+        cells[i].velocity.x = 0.0;
+        cells[(y_cells-1)*x_cells + i].velocity.y = 0.0;
+      }
+      for j in 0..x_cells {{
+        cells[y_cells * j].velocity.x = 0.;
+        cells[y_cells*(j+1) - 1].velocity.x = 0.;
+      }}
+
       let mut out = Self {
-        positions: SwapBuffers::init_with(positions.into(), &device, &SwapBuffersDescriptor {
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+        positions: SwapBuffers::init_with(
+          positions.into(),
+          &device,
+          &SwapBuffersDescriptor {
+            usage: wgpu::BufferUsages::STORAGE
+              | wgpu::BufferUsages::COPY_DST
+              | wgpu::BufferUsages::COPY_SRC,
             visibility: ShaderStages::COMPUTE,
             ty: wgpu::BufferBindingType::Storage { read_only: false },
             has_dynamic_offset: false,
-        }),
+          },
+        ),
         pipeline: None,
         compute_pipeline: None,
-        bind_group: None,
+        cell_bind_group: None,
         instance_buf: None,
         cells_buf: None,
         celldims_buf: None,
@@ -207,14 +223,6 @@ use super::*;
   impl Simulation for DefaultSim {
     fn step(&mut self, dt: f32) {
       let len = self.positions.cur().len();
-
-      for i in 0..len {
-        let (c, (x, y)) = self.get_cell(self.positions.cur()[i]);
-        self.positions.cur_mut()[i] += c.velocity * dt;
-        let (_, (nx, ny)) = self.get_cell(self.positions.cur()[i]);
-        self.mut_by_index(x, y).density -= 1.;
-        self.mut_by_index(nx, ny).density += 1.;
-      }
     }
 
     fn run_passes(
@@ -230,8 +238,17 @@ use super::*;
         });
         pass.set_pipeline(self.compute_pipeline.as_ref().unwrap());
         pass.set_bind_group(0, global_bind_group, &[]);
-        // pass.dispatch_workgroups(x, y, z);
+        pass.set_bind_group(1, self.cell_bind_group.as_ref().unwrap(), &[]);
+        pass.set_bind_group(2, self.positions.cur_group(), &[]);
+        pass.dispatch_workgroups(self.positions.cur().len() as u32, 1, 1);
       }
+      encoder.copy_buffer_to_buffer(
+        self.positions.cur_buf(),
+        0,
+        self.instance_buf.as_ref().unwrap(),
+        0,
+        self.positions.cur_size(),
+      );
       {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
           label: None,
@@ -250,7 +267,7 @@ use super::*;
         pass.set_pipeline(self.pipeline.as_ref().unwrap());
         pass.set_vertex_buffer(0, self.instance_buf.as_ref().unwrap().slice(..));
         pass.set_bind_group(0, global_bind_group, &[]);
-        pass.set_bind_group(1, &self.bind_group, &[]);
+        pass.set_bind_group(1, &self.cell_bind_group, &[]);
         pass.draw(0..3, 0..(self.positions.cur().len() as u32));
       }
       encoder.finish()
@@ -300,7 +317,7 @@ use super::*;
 
       let compute_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("DefSim COMPUTE pipeline layout"),
-        bind_group_layouts: &[global_layout],
+        bind_group_layouts: &[global_layout, &cell_bg_layout, &self.positions.layout],
         push_constant_ranges: &[],
       });
 
@@ -405,15 +422,17 @@ use super::*;
 
       self.cells_buf = Some(cell_buffer);
       self.celldims_buf = Some(celldims_buf);
-      self.bind_group = Some(cell_bg);
+      self.cell_bind_group = Some(cell_bg);
     }
 
     fn write_buffers(&self, queue: &wgpu::Queue) {
-      queue.write_buffer(
-        self.instance_buf.as_ref().unwrap(),
-        0,
-        self.positions.cur().as_bytes_buffer(),
-      );
+      // OLD: copy positions to the instance buffer
+      // queue.write_buffer(
+      //   self.instance_buf.as_ref().unwrap(),
+      //   0,
+      //   self.positions.cur().as_bytes_buffer(),
+      // );
+
       queue.write_buffer(
         self.cells_buf.as_ref().unwrap(),
         0,
@@ -446,16 +465,19 @@ use super::*;
 
       let cells = vec![DefaultCell::default(); x_cells * y_cells];
       let direction = rand::distr::Uniform::new(0.0f32, f32::consts::TAU).unwrap();
-      let vel_distr = rand::distr::Uniform::new(200.0, 150000.0).unwrap();
+      let vel_distr = rand::distr::Uniform::new(200.0, 1500.0).unwrap();
 
-      let cells = cells.into_par_iter().map(|mut c| {
-        let mut rng = rand::rng();
-        let v = rng.sample(vel_distr);
-        let angle = rng.sample(direction);
-        c.velocity.x = angle.cos() * v;
-        c.velocity.y = angle.sin() * v;
-        c
-      }).collect();
+      let cells = cells
+        .into_par_iter()
+        .map(|mut c| {
+          let mut rng = rand::rng();
+          let v = rng.sample(vel_distr);
+          let angle = rng.sample(direction);
+          c.velocity.x = angle.cos() * v;
+          c.velocity.y = angle.sin() * v;
+          c
+        })
+        .collect();
 
       self.x_cells = x_cells;
       self.y_cells = y_cells;

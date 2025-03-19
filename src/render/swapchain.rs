@@ -1,8 +1,8 @@
 use std::{default, num::NonZero};
 use wgpu::{
   util::{BufferInitDescriptor, DeviceExt},
-  BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry,
-  Buffer, BufferBinding, BufferBindingType, BufferUsages, Device, Queue,
+  BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+  BindGroupLayoutEntry, Buffer, BufferBinding, BufferBindingType, BufferUsages, Device, Queue,
   ShaderStages,
 };
 
@@ -13,6 +13,7 @@ pub struct SwapBuffers<T> {
   data: [T; 2],
   group: [BindGroup; 2],
   cur: usize,
+  pub layout: BindGroupLayout,
 }
 
 pub struct SwapBuffersDescriptor {
@@ -23,7 +24,7 @@ pub struct SwapBuffersDescriptor {
 }
 
 impl<T: Clone + AsBuffer> SwapBuffers<T> {
-  pub fn init_with(state: T,  dev: &Device, desc: &SwapBuffersDescriptor) -> Self {
+  pub fn init_with(state: T, dev: &Device, desc: &SwapBuffersDescriptor) -> Self {
     let bytes = state.as_bytes_buffer();
     let buf0 = dev.create_buffer_init(&BufferInitDescriptor {
       label: None,
@@ -92,6 +93,7 @@ impl<T: Clone + AsBuffer> SwapBuffers<T> {
       data: [state.clone(), state],
       group: [bg1, bg2],
       cur: 0,
+      layout: layout0,
     }
   }
   pub fn cur(&self) -> &T {
@@ -100,8 +102,7 @@ impl<T: Clone + AsBuffer> SwapBuffers<T> {
   pub fn old(&self) -> (&Buffer, &T) {
     (&self.buf[1 - self.cur], &self.data[1 - self.cur])
   }
-  // #[deprecated]
-  fn cur_buf(&self) -> &Buffer {
+  pub fn cur_buf(&self) -> &Buffer {
     &self.buf[self.cur]
   }
   pub fn cur_mut(&mut self) -> &mut T {
@@ -111,12 +112,15 @@ impl<T: Clone + AsBuffer> SwapBuffers<T> {
     self.cur = 1 - self.cur;
   }
   pub fn cur_size(&self) -> u64 {
-    self.buf[0].size()
+    self.buf[self.cur].size()
   }
   pub fn old_size(&self) -> u64 {
-    self.buf[0].size()
+    self.buf[1 - self.cur].size()
   }
   pub fn write(&mut self, q: &mut Queue) {
-    q.write_buffer(self.cur_buf(), 0, self.data[1-self.cur].as_bytes_buffer());
+    q.write_buffer(self.cur_buf(), 0, self.data[self.cur].as_bytes_buffer());
+  }
+  pub fn cur_group(&self) -> &BindGroup {
+    &self.group[self.cur]
   }
 }
