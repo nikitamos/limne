@@ -3,7 +3,6 @@ use std::ops::{Deref, DerefMut};
 
 use wgpu::{util::DeviceExt, CommandBuffer, CommandEncoder, VertexBufferLayout};
 use winit::dpi::PhysicalSize;
-use zerocopy::Immutable;
 
 use crate::math::vector::NumVector3D;
 
@@ -11,7 +10,7 @@ pub trait AsBuffer {
   fn as_bytes_buffer(&self) -> &[u8];
 }
 
-#[derive(Immutable)]
+#[derive(Clone)]
 struct ParticleVector<T: Copy>(Vec<NumVector3D<T>>);
 
 impl<T: Copy> From<Vec<NumVector3D<T>>> for ParticleVector<T> {
@@ -85,11 +84,13 @@ pub mod two_d {
   use rayon::prelude::*;
 use wgpu::{
     util::BufferInitDescriptor, vertex_attr_array, MultisampleState, RenderPassColorAttachment,
-    RenderPipelineDescriptor,
+    RenderPipelineDescriptor, ShaderStages,
   };
   use winit::dpi::PhysicalSize;
 
-  use super::*;
+  use crate::render::swapchain::{SwapBuffers, SwapBuffersDescriptor};
+
+use super::*;
 
   #[repr(C)]
   #[derive(Default, Clone)]
@@ -100,7 +101,7 @@ use wgpu::{
   }
 
   pub struct DefaultSim {
-    positions: ParticleVector<f32>,
+    positions: SwapBuffers<ParticleVector<f32>>,
     cells: Vec<DefaultCell>,
     compute_pipeline: Option<wgpu::ComputePipeline>,
     pipeline: Option<wgpu::RenderPipeline>,
@@ -141,7 +142,12 @@ use wgpu::{
       }
 
       let mut out = Self {
-        positions: positions.into(),
+        positions: SwapBuffers::init_with(positions.into(), &device, &SwapBuffersDescriptor {
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+            visibility: ShaderStages::COMPUTE,
+            ty: wgpu::BufferBindingType::Storage { read_only: false },
+            has_dynamic_offset: false,
+        }),
         pipeline: None,
         compute_pipeline: None,
         bind_group: None,
@@ -200,12 +206,12 @@ use wgpu::{
 
   impl Simulation for DefaultSim {
     fn step(&mut self, dt: f32) {
-      let len = self.positions.len();
+      let len = self.positions.cur().len();
 
       for i in 0..len {
-        let (c, (x, y)) = self.get_cell(self.positions[i]);
-        self.positions[i] += c.velocity * dt;
-        let (_, (nx, ny)) = self.get_cell(self.positions[i]);
+        let (c, (x, y)) = self.get_cell(self.positions.cur()[i]);
+        self.positions.cur_mut()[i] += c.velocity * dt;
+        let (_, (nx, ny)) = self.get_cell(self.positions.cur()[i]);
         self.mut_by_index(x, y).density -= 1.;
         self.mut_by_index(nx, ny).density += 1.;
       }
@@ -245,7 +251,7 @@ use wgpu::{
         pass.set_vertex_buffer(0, self.instance_buf.as_ref().unwrap().slice(..));
         pass.set_bind_group(0, global_bind_group, &[]);
         pass.set_bind_group(1, &self.bind_group, &[]);
-        pass.draw(0..3, 0..(self.positions.len() as u32));
+        pass.draw(0..3, 0..(self.positions.cur().len() as u32));
       }
       encoder.finish()
     }
@@ -313,7 +319,7 @@ use wgpu::{
       // PARTICLE DRAWING (geometry)
       let instance_buf = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("Instance buffer"),
-        contents: self.positions.as_bytes_buffer(),
+        contents: self.positions.cur().as_bytes_buffer(),
         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
       });
 
@@ -406,7 +412,7 @@ use wgpu::{
       queue.write_buffer(
         self.instance_buf.as_ref().unwrap(),
         0,
-        self.positions.as_bytes_buffer(),
+        self.positions.cur().as_bytes_buffer(),
       );
       queue.write_buffer(
         self.cells_buf.as_ref().unwrap(),
@@ -427,7 +433,7 @@ use wgpu::{
     }
 
     fn on_surface_resized(&mut self, size: PhysicalSize<u32>) {
-      self.positions.par_iter_mut().for_each(|p| {
+      self.positions.cur_mut().par_iter_mut().for_each(|p| {
         let mut rng = rand::rng();
         p.x = rng.sample(rand::distr::Uniform::new(0.0, size.width as f32).unwrap());
         p.y = rng.sample(rand::distr::Uniform::new(0.0, size.height as f32).unwrap());

@@ -1,14 +1,14 @@
-use std::num::NonZero;
-
+use std::{default, num::NonZero};
 use wgpu::{
   util::{BufferInitDescriptor, DeviceExt},
   BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry,
   Buffer, BufferBinding, BufferBindingType, BufferUsages, Device, Queue,
   ShaderStages,
 };
-use zerocopy::{Immutable, IntoBytes};
 
-struct SwapBuffers<T> {
+use super::simulation::AsBuffer;
+
+pub struct SwapBuffers<T> {
   buf: [Buffer; 2],
   data: [T; 2],
   group: [BindGroup; 2],
@@ -18,13 +18,13 @@ struct SwapBuffers<T> {
 pub struct SwapBuffersDescriptor {
   pub usage: BufferUsages,
   pub visibility: ShaderStages,
-  ty: BufferBindingType,
-  has_dynamic_offset: bool,
+  pub ty: BufferBindingType,
+  pub has_dynamic_offset: bool,
 }
 
-impl<T: Clone + IntoBytes + Immutable> SwapBuffers<T> {
+impl<T: Clone + AsBuffer> SwapBuffers<T> {
   pub fn init_with(state: T,  dev: &Device, desc: &SwapBuffersDescriptor) -> Self {
-    let bytes = state.as_bytes();
+    let bytes = state.as_bytes_buffer();
     let buf0 = dev.create_buffer_init(&BufferInitDescriptor {
       label: None,
       contents: bytes,
@@ -94,16 +94,17 @@ impl<T: Clone + IntoBytes + Immutable> SwapBuffers<T> {
       cur: 0,
     }
   }
-  pub fn cur(&self) -> (&Buffer, &T) {
-    (&self.buf[self.cur], &self.data[self.cur])
+  pub fn cur(&self) -> &T {
+    &self.data[self.cur]
   }
   pub fn old(&self) -> (&Buffer, &T) {
     (&self.buf[1 - self.cur], &self.data[1 - self.cur])
   }
-  pub fn cur_buf_mut(&mut self) -> &mut Buffer {
-    &mut self.buf[self.cur]
+  // #[deprecated]
+  fn cur_buf(&self) -> &Buffer {
+    &self.buf[self.cur]
   }
-  pub fn cur_data_mut(&mut self) -> &mut T {
+  pub fn cur_mut(&mut self) -> &mut T {
     &mut self.data[self.cur]
   }
   pub fn swap(&mut self) {
@@ -116,6 +117,6 @@ impl<T: Clone + IntoBytes + Immutable> SwapBuffers<T> {
     self.buf[0].size()
   }
   pub fn write(&mut self, q: &mut Queue) {
-    q.write_buffer(self.cur().0, 0, self.data[1-self.cur].as_bytes());
+    q.write_buffer(self.cur_buf(), 0, self.data[1-self.cur].as_bytes_buffer());
   }
 }

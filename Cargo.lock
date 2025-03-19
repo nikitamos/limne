@@ -377,7 +377,6 @@ dependencies = [
  "tokio",
  "wgpu",
  "winit",
- "zerocopy 0.8.23",
 ]
 
 [[package]]

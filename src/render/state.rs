@@ -60,6 +60,7 @@ impl<'a> State<'a> {
     let (device, queue) = adapter
       .request_device(
         &DeviceDescriptor {
+          required_features: Features::VERTEX_WRITABLE_STORAGE,
           ..Default::default()
         },
         None,
