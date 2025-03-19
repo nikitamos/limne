@@ -16,7 +16,7 @@ pub struct App<'a> {
   window: Option<Arc<Window>>,
   state: Option<State<'a>>,
   time: Instant,
-  startup_time: Instant
+  startup_time: Instant,
 }
 
 impl<'a> ApplicationHandler for App<'a> {
@@ -31,7 +31,8 @@ impl<'a> ApplicationHandler for App<'a> {
       self
         .state
         .replace(self.runtime.block_on(State::create(self.window())));
-      self.map_state(|s| s.set_simulation(Box::new(two_d::DefaultSim::new(10000, &s.device, size))));
+      self
+        .map_state(|s| s.set_simulation(Box::new(two_d::DefaultSim::new(10000, &s.device, size))));
     }
   }
 
@@ -57,7 +58,10 @@ impl<'a> ApplicationHandler for App<'a> {
         let dt = (now - self.time).as_secs_f32();
         let total = (now - self.startup_time).as_secs_f32();
 
-        match self.map_state(|s| {s.update(dt, total); s.render()}) {
+        match self.map_state(|s| {
+          s.update(dt, total);
+          s.render()
+        }) {
           Ok(()) => (),
           Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
             let size = self.window().inner_size();
@@ -87,7 +91,7 @@ impl App<'_> {
       window: None,
       state: None,
       time: Instant::now(),
-      startup_time: Instant::now()
+      startup_time: Instant::now(),
     }
   }
   fn window(&self) -> Arc<Window> {

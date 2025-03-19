@@ -3,6 +3,7 @@ use std::ops::{Deref, DerefMut};
 
 use wgpu::{util::DeviceExt, CommandBuffer, CommandEncoder, VertexBufferLayout};
 use winit::dpi::PhysicalSize;
+use zerocopy::Immutable;
 
 use crate::math::vector::NumVector3D;
 
@@ -10,6 +11,7 @@ pub trait AsBuffer {
   fn as_bytes_buffer(&self) -> &[u8];
 }
 
+#[derive(Immutable)]
 struct ParticleVector<T: Copy>(Vec<NumVector3D<T>>);
 
 impl<T: Copy> From<Vec<NumVector3D<T>>> for ParticleVector<T> {
@@ -79,10 +81,9 @@ fn make_vec_buf<T>(v: &Vec<T>) -> &[u8] {
 
 pub mod two_d {
   use core::f32;
-
   use rand::Rng;
   use rayon::prelude::*;
-  use wgpu::{
+use wgpu::{
     util::BufferInitDescriptor, vertex_attr_array, MultisampleState, RenderPassColorAttachment,
     RenderPipelineDescriptor,
   };
@@ -151,7 +152,7 @@ pub mod two_d {
         y_cells,
         cells,
         height,
-        width
+        width,
       };
 
       for i in 0..x_cells {
@@ -199,32 +200,14 @@ pub mod two_d {
 
   impl Simulation for DefaultSim {
     fn step(&mut self, dt: f32) {
-      let old_densities: Vec<_> = self.cells.par_iter().map(|c| c.density).collect();
       let len = self.positions.len();
 
-      let p = &mut self.positions;
-
-      // p.par_iter_mut().enumerate().map(|(i, pos)| {
-      //   let (c, (x, y)) = self.get_cell(pos.clone());
-      // });
       for i in 0..len {
         let (c, (x, y)) = self.get_cell(self.positions[i]);
         self.positions[i] += c.velocity * dt;
         let (_, (nx, ny)) = self.get_cell(self.positions[i]);
         self.mut_by_index(x, y).density -= 1.;
         self.mut_by_index(nx, ny).density += 1.;
-      }
-
-      for x in 0..(self.x_cells - 1) {
-        for y in 0..(self.y_cells - 1) {
-          let cell = self.cell_by_index(x, y);
-          let d_rho = old_densities[self.cell_index(x, y)] - cell.density;
-          let divergence = NumVector3D::<f32> {
-            x: cell.velocity.x - self.cell_by_index(x + 1, y).velocity.x,
-            y: cell.velocity.y,
-            z: 0.0,
-          };
-        }
       }
     }
 
@@ -240,17 +223,20 @@ pub mod two_d {
           timestamp_writes: None,
         });
         pass.set_pipeline(self.compute_pipeline.as_ref().unwrap());
-        // pass.set_bind_group(index, bind_group, offsets);
+        pass.set_bind_group(0, global_bind_group, &[]);
         // pass.dispatch_workgroups(x, y, z);
       }
       {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
           label: None,
-          color_attachments: &[ Some (RenderPassColorAttachment {
+          color_attachments: &[Some(RenderPassColorAttachment {
             view,
             resolve_target: None,
-            ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
-        })],
+            ops: wgpu::Operations {
+              load: wgpu::LoadOp::Load,
+              store: wgpu::StoreOp::Store,
+            },
+          })],
           depth_stencil_attachment: None,
           timestamp_writes: None,
           occlusion_query_set: None,
@@ -299,19 +285,21 @@ pub mod two_d {
 
       // DRAWING layout
       let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None,
-            bind_group_layouts: &[global_layout, &cell_bg_layout],
-            push_constant_ranges: &[],
-        });
-      
-      // COMPUTE PIPELINE
-      let compute_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("DefSim COMPUTE pipeline layout"),
-        bind_group_layouts: &[],
+        label: None,
+        bind_group_layouts: &[global_layout, &cell_bg_layout],
         push_constant_ranges: &[],
       });
 
-      let compute_module = device.create_shader_module(wgpu::include_wgsl!("shaders/2d-compute.wgsl"));
+      // COMPUTE PIPELINE
+
+      let compute_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("DefSim COMPUTE pipeline layout"),
+        bind_group_layouts: &[global_layout],
+        push_constant_ranges: &[],
+      });
+
+      let compute_module =
+        device.create_shader_module(wgpu::include_wgsl!("shaders/2d-compute.wgsl"));
 
       let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some("DefSim COMPUTE pipeline"),
@@ -338,18 +326,16 @@ pub mod two_d {
           module: &module,
           entry_point: Some("vs_main"),
           compilation_options: Default::default(),
-          buffers: &[
-            DEFSIM_BUFFER_LAYOUT
-          ],
+          buffers: &[DEFSIM_BUFFER_LAYOUT],
         },
         primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            strip_index_format: None,
-            front_face: wgpu::FrontFace::Ccw,
-            cull_mode: Some(wgpu::Face::Back),
-            unclipped_depth: false,
-            polygon_mode: wgpu::PolygonMode::Fill,
-            conservative: false,
+          topology: wgpu::PrimitiveTopology::TriangleList,
+          strip_index_format: None,
+          front_face: wgpu::FrontFace::Ccw,
+          cull_mode: Some(wgpu::Face::Back),
+          unclipped_depth: false,
+          polygon_mode: wgpu::PolygonMode::Fill,
+          conservative: false,
         },
         depth_stencil: None,
         multisample: MultisampleState {
@@ -357,15 +343,15 @@ pub mod two_d {
           mask: !0,
           alpha_to_coverage_enabled: false,
         },
-        fragment: Some (wgpu::FragmentState {
-            module: &module,
-            entry_point: Some("fs_main"),
-            compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format,
-                blend: Some(wgpu::BlendState::REPLACE),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
+        fragment: Some(wgpu::FragmentState {
+          module: &module,
+          entry_point: Some("fs_main"),
+          compilation_options: Default::default(),
+          targets: &[Some(wgpu::ColorTargetState {
+            format,
+            blend: Some(wgpu::BlendState::REPLACE),
+            write_mask: wgpu::ColorWrites::ALL,
+          })],
         }),
         multiview: None,
         cache: None,
@@ -441,26 +427,29 @@ pub mod two_d {
     }
 
     fn on_surface_resized(&mut self, size: PhysicalSize<u32>) {
-      let mut rng = rand::rng();
-      for p in self.positions.iter_mut() {
+      self.positions.par_iter_mut().for_each(|p| {
+        let mut rng = rand::rng();
         p.x = rng.sample(rand::distr::Uniform::new(0.0, size.width as f32).unwrap());
         p.y = rng.sample(rand::distr::Uniform::new(0.0, size.height as f32).unwrap());
-      }
+      });
 
       // Create cells
       let x_cells = (size.width).div_ceil(CELL_SIZE) as usize;
       let y_cells = (size.height).div_ceil(CELL_SIZE) as usize;
-      println!("Cell number: {}", x_cells * y_cells);
+      println!("Cell count: {}", x_cells * y_cells);
 
-      let mut cells = vec![DefaultCell::default(); x_cells * y_cells];
+      let cells = vec![DefaultCell::default(); x_cells * y_cells];
       let direction = rand::distr::Uniform::new(0.0f32, f32::consts::TAU).unwrap();
       let vel_distr = rand::distr::Uniform::new(200.0, 150000.0).unwrap();
-      for c in cells.iter_mut() {
+
+      let cells = cells.into_par_iter().map(|mut c| {
+        let mut rng = rand::rng();
         let v = rng.sample(vel_distr);
         let angle = rng.sample(direction);
         c.velocity.x = angle.cos() * v;
         c.velocity.y = angle.sin() * v;
-      }
+        c
+      }).collect();
 
       self.x_cells = x_cells;
       self.y_cells = y_cells;

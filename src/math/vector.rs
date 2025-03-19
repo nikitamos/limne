@@ -1,5 +1,7 @@
 use std::ops::{Add, AddAssign, Div, Mul, Sub};
 
+use zerocopy::{FromBytes, Immutable, IntoBytes};
+
 /// Vector in an orthonormal right-hand 3D basis
 pub trait Vector3D<T>:
   Add<Self, Output = Self>
@@ -24,7 +26,7 @@ pub trait Vector3D<T>:
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Default, Debug,)]
+#[derive(Copy, Clone, Default, Debug,Immutable,FromBytes,IntoBytes)]
 pub struct NumVector3D<T: Copy> {
   pub x: T,
   pub y: T,

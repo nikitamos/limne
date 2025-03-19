@@ -2,4 +2,4 @@ pub mod application;
 mod shaders;
 pub mod simulation;
 mod state;
-mod swapchain;
+pub mod swapchain;

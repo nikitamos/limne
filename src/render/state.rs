@@ -58,9 +58,12 @@ impl<'a> State<'a> {
       .expect("Unable to create an adapter");
 
     let (device, queue) = adapter
-      .request_device(&DeviceDescriptor {
-        ..Default::default()
-      }, None)
+      .request_device(
+        &DeviceDescriptor {
+          ..Default::default()
+        },
+        None,
+      )
       .await
       .expect("unable to create a device");
 
@@ -137,7 +140,7 @@ impl<'a> State<'a> {
       viewport_buf,
       global_layout,
       dt: 0.,
-      total_time: 0.
+      total_time: 0.,
     }
   }
 
@@ -239,7 +242,13 @@ impl<'a> State<'a> {
     self.queue.write_buffer(
       &self.viewport_buf,
       0,
-      [self.config.width as f32, self.config.height as f32, self.total_time, self.dt].as_bytes_buffer(),
+      [
+        self.config.width as f32,
+        self.config.height as f32,
+        self.total_time,
+        self.dt,
+      ]
+      .as_bytes_buffer(),
     );
 
     let commands = std::iter::once(encoder.finish());
