@@ -79,9 +79,9 @@ fn make_vec_buf<T>(v: &Vec<T>) -> &[u8] {
 
 pub mod two_d {
   use core::f32;
-  use std::num::NonZero;
 
   use rand::Rng;
+  use rayon::prelude::*;
   use wgpu::{
     util::BufferInitDescriptor, vertex_attr_array, MultisampleState, RenderPassColorAttachment,
     RenderPipelineDescriptor,
@@ -95,7 +95,7 @@ pub mod two_d {
   struct DefaultCell {
     pub velocity: NumVector3D<f32>,
     pub pressure: f32,
-    pub count: f32,
+    pub density: f32,
   }
 
   pub struct DefaultSim {
@@ -112,7 +112,7 @@ pub mod two_d {
     width: f32,
   }
 
-  const CELL_SIZE: u32 = 50;
+  const CELL_SIZE: u32 = 10;
   impl DefaultSim {
     pub fn new(count: usize, device: &wgpu::Device, size: PhysicalSize<u32>) -> Self {
       let mut positions: Vec<NumVector3D<f32>> = vec![Default::default(); count];
@@ -165,8 +165,8 @@ pub mod two_d {
     }
     fn get_cell(&self, pos: NumVector3D<f32>) -> (DefaultCell, (usize, usize)) {
       let idx = (
-        (((pos.x + self.width) / (CELL_SIZE as f32)) as usize).clamp(0, self.x_cells - 1),
-        (((pos.y + self.height) / (CELL_SIZE as f32)) as usize).clamp(0, self.y_cells - 1),
+        ((pos.x / (CELL_SIZE as f32)) as usize).clamp(0, self.x_cells - 1),
+        ((pos.y / (CELL_SIZE as f32)) as usize).clamp(0, self.y_cells - 1),
       );
       (
         self
@@ -177,17 +177,15 @@ pub mod two_d {
         idx,
       )
     }
-    fn cell_mut(&mut self, pos: NumVector3D<f32>) -> (&mut DefaultCell, (usize, usize)) {
-      let idx = (
-        (((pos.x + self.width / 2.0) / (CELL_SIZE as f32)) as usize)
-          .clamp(0, self.positions.len() - 1),
-        (((pos.y + self.height / 2.0) / (CELL_SIZE as f32)) as usize)
-          .clamp(0, self.positions.len() - 1),
-      );
-      (
-        self.cells.get_mut(idx.1 + self.x_cells * idx.0).unwrap(),
-        idx,
-      )
+    fn cell_by_index(&self, x: usize, y: usize) -> DefaultCell {
+      self.cells[self.cell_index(x, y)].clone()
+    }
+    fn mut_by_index(&mut self, x: usize, y: usize) -> &mut DefaultCell {
+      let i = self.cell_index(x, y);
+      &mut self.cells[i]
+    }
+    fn cell_index(&self, x: usize, y: usize) -> usize {
+      y * self.x_cells + x
     }
   }
 
@@ -199,11 +197,32 @@ pub mod two_d {
 
   impl Simulation for DefaultSim {
     fn step(&mut self, dt: f32) {
-      // for now we consider that each particle velocity is just deictated by the containing cell
+      let old_densities: Vec<_> = self.cells.par_iter().map(|c| c.density).collect();
       let len = self.positions.len();
+
+      let p = &mut self.positions;
+
+      // p.par_iter_mut().enumerate().map(|(i, pos)| {
+      //   let (c, (x, y)) = self.get_cell(pos.clone());
+      // });
       for i in 0..len {
-        let c = self.get_cell(self.positions[i]).0;
+        let (c, (x, y)) = self.get_cell(self.positions[i]);
         self.positions[i] += c.velocity * dt;
+        let (_, (nx, ny)) = self.get_cell(self.positions[i]);
+        self.mut_by_index(x, y).density -= 1.;
+        self.mut_by_index(nx, ny).density += 1.;
+      }
+
+      for x in 0..(self.x_cells - 1) {
+        for y in 0..(self.y_cells - 1) {
+          let cell = self.cell_by_index(x, y);
+          let d_rho = old_densities[self.cell_index(x, y)] - cell.density;
+          let divergence = NumVector3D::<f32> {
+            x: cell.velocity.x - self.cell_by_index(x + 1, y).velocity.x,
+            y: cell.velocity.y,
+            z: 0.0,
+          };
+        }
       }
     }
 
@@ -296,7 +315,7 @@ pub mod two_d {
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
             front_face: wgpu::FrontFace::Ccw,
-            cull_mode: None,
+            cull_mode: Some(wgpu::Face::Back),
             unclipped_depth: false,
             polygon_mode: wgpu::PolygonMode::Fill,
             conservative: false,
@@ -397,13 +416,13 @@ pub mod two_d {
       }
 
       // Create cells
-      let x_cells = (2 * size.width).div_ceil(CELL_SIZE) as usize;
-      let y_cells = (2 * size.height).div_ceil(CELL_SIZE) as usize;
+      let x_cells = (size.width).div_ceil(CELL_SIZE) as usize;
+      let y_cells = (size.height).div_ceil(CELL_SIZE) as usize;
+      println!("Cell number: {}", x_cells * y_cells);
 
       let mut cells = vec![DefaultCell::default(); x_cells * y_cells];
-      const VEL_BOUND: f32 = 700.0;
       let direction = rand::distr::Uniform::new(0.0f32, f32::consts::TAU).unwrap();
-      let vel_distr = rand::distr::Uniform::new(20.0, 1000.0).unwrap();
+      let vel_distr = rand::distr::Uniform::new(200.0, 150000.0).unwrap();
       for c in cells.iter_mut() {
         let v = rng.sample(vel_distr);
         let angle = rng.sample(direction);

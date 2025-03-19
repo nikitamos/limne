@@ -36,7 +36,7 @@ var<storage> grid: Grid;
 
 fn get_cell(world_pos: vec2<f32>) -> Cell {
   var c: Cell;
-  var ind = clamp(vec2<u32>((world_pos + size) / grid.cell_side), vec2(0u, 0u), vec2(grid.w, grid.h) - vec2(1u, 1u));
+  var ind = clamp(vec2<u32>(world_pos / grid.cell_side), vec2(0u, 0u), vec2(grid.w, grid.h) - vec2(1u, 1u));
 
   return cells[ind.x + ind.y * grid.w];
 }
@@ -47,27 +47,23 @@ fn lerp(a1: f32, a2: f32,
   return b1 + (b2 - b1) * saturate(a / (a2 - a1));
 }
 
-const COUNT = 500.0;
-const TOP_VELOCITY = 1000.0;
+const MIN_VELOCITY = 200.0;
+const MAX_VELOCITY = 1500.0;
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   // let cell = get_cell(vec2(in.pos.x, in.pos.y));
   let cell = get_cell(vec2(in.particle_pos.x, in.particle_pos.y));
   let len = length(vec2(cell.vx, cell.vy));
-  let r = lerp(0., TOP_VELOCITY, 0.0, 1.0, len);
+  let r = lerp(MIN_VELOCITY, MAX_VELOCITY, 0.0, 1.0, len);
 
   var col: vec4<f32> = vec4(r, 0.0, 1.0 - r, 1.0);
   let inst = f32(in.iid);
-  // var safd: vec4<f32> = clamp((inst / COUNT) * col, vec4(0.0,0.0,0.0,1.0), vec4(1.0,1.0,1.0,1.0));
-  // if (in.idx != 0) {
-  //   safd = vec4<f32>(0.0,1.0,0.0,1.0);
-  // }
   
   return col;
 }
 
 
-const delta = vec2(0.0, 10.0);
+const delta = vec2(5.0, 0.0);
 const PI = 3.1515926535898;
 
 @vertex
@@ -75,27 +71,32 @@ fn vs_main(
   in: Input
 ) -> VertexOutput {
   let angle = f32(in.idx) * 2.0 * PI/3.0;
-  let rot = mat2x2(
-    cos(angle), sin(angle),
-    -sin(angle), cos(angle)
-  );
 
   let cell = get_cell(vec2(in.pos.x, in.pos.y));
   
   var speed_angle: f32 = 0;
-  if (cell.vy == 0 && cell.vx <= 0.0) {
-    speed_angle = PI;
-  } else if (cell.vx < 0.0) {
-    speed_angle = PI + atan(cell.vx / cell.vy);
+  let v_len = length(vec2(cell.vx, cell.vy));
+  if (cell.vy == 0) {
+    speed_angle = PI/2 * (1 - sign(cell.vx));
+  } else if (cell.vx >= 0.0) {
+    if (cell.vy >= 0) { // I
+      speed_angle = PI/2. -  atan(cell.vx / cell.vy);
+    } else { // IV
+      speed_angle = -PI/2 - atan(cell.vx / cell.vy);
+    }
   } else {
-    speed_angle = atan(cell.vx / cell.vy);
+    if (cell.vy >= 0.){ // II
+      speed_angle = PI/2. - atan(cell.vx / cell.vy);
+    } else { // III
+      speed_angle = -PI/2 - atan(cell.vx / cell.vy);
+    }
   }
 
-  let rot2 = mat2x2(
-    cos(speed_angle), sin(speed_angle),
-    -sin(speed_angle), cos(speed_angle)
+  let rot = mat2x2(
+    cos(speed_angle+angle), sin(speed_angle+angle),
+    -sin(speed_angle+angle), cos(speed_angle+angle)
   );
-  var d = (rot * rot2) * delta;
+  var d = rot * delta;
   if (in.idx == 0) {
     d *= 2.0;
   }
@@ -106,7 +107,6 @@ fn vs_main(
   // души еретиков, воеже безцельнаго надругания
   // над математикой строки co столбцы матриц преместиша.
 
-  // NEW
   let world_to_clip = transpose(mat3x3(
     2.0 / size.x,       0.0,      -1.0,
         0.0,        2.0 / size.y, -1.0,
@@ -114,12 +114,6 @@ fn vs_main(
   ));
   
   out.pos = vec4(world_to_clip * vec3(in.pos.x+d.x, in.pos.y+d.y, 1.0), 1.0);
-
-  // OLD BEGIN
-  // out.pos = vec4(vec2(in.pos.x, in.pos.y) + d, 0.0, 1.0);
-  // out.pos.y /= size.y;
-  // out.pos.x /= size.x;
-  // OLD END
 
   out.particle_pos = in.pos;
   out.idx = in.idx;

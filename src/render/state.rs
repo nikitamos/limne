@@ -37,7 +37,7 @@ impl<'a> State<'a> {
   }
   pub async fn create(window: Arc<Window>) -> Self {
     let instance = wgpu::Instance::new(&InstanceDescriptor {
-      backends: Backends::VULKAN,
+      backends: Backends::GL,
       ..Default::default()
     });
 
@@ -56,7 +56,6 @@ impl<'a> State<'a> {
 
     let (device, queue) = adapter
       .request_device(&DeviceDescriptor {
-        required_features: Features::BUFFER_BINDING_ARRAY | Features::STORAGE_RESOURCE_BINDING_ARRAY,
         ..Default::default()
       }, None)
       .await
