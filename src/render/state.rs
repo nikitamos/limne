@@ -26,7 +26,6 @@ pub(super) struct State<'a> {
 }
 
 pub mod bindings {
-  pub const GLOBAL_BIND_GROUP: u32 = 0;
   pub const VIEWPORT_SIZE_LOCATION: u32 = 0;
   pub const VIEWPORT_SIZE_SIZE: u64 = 2u64 * std::mem::size_of::<f32>() as u64;
 }
@@ -37,7 +36,7 @@ impl<'a> State<'a> {
   }
   pub async fn create(window: Arc<Window>) -> Self {
     let instance = wgpu::Instance::new(&InstanceDescriptor {
-      backends: Backends::GL,
+      backends: Backends::VULKAN,
       ..Default::default()
     });
 

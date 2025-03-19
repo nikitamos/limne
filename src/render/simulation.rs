@@ -101,6 +101,7 @@ pub mod two_d {
   pub struct DefaultSim {
     positions: ParticleVector<f32>,
     cells: Vec<DefaultCell>,
+    compute_pipeline: Option<wgpu::ComputePipeline>,
     pipeline: Option<wgpu::RenderPipeline>,
     instance_buf: Option<wgpu::Buffer>,
     cells_buf: Option<wgpu::Buffer>,
@@ -141,6 +142,7 @@ pub mod two_d {
       let mut out = Self {
         positions: positions.into(),
         pipeline: None,
+        compute_pipeline: None,
         bind_group: None,
         instance_buf: None,
         cells_buf: None,
@@ -233,6 +235,15 @@ pub mod two_d {
       view: &wgpu::TextureView,
     ) -> wgpu::CommandBuffer {
       {
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+          label: Some("DefSim COMPUTE pass"),
+          timestamp_writes: None,
+        });
+        pass.set_pipeline(self.compute_pipeline.as_ref().unwrap());
+        // pass.set_bind_group(index, bind_group, offsets);
+        // pass.dispatch_workgroups(x, y, z);
+      }
+      {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
           label: None,
           color_attachments: &[ Some (RenderPassColorAttachment {
@@ -259,6 +270,7 @@ pub mod two_d {
       format: wgpu::TextureFormat,
       global_layout: &wgpu::BindGroupLayout,
     ) {
+      // CELL BINDING GROUP (for DRAWING)
       let cell_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("Cell binding layout"),
         entries: &[
@@ -285,11 +297,30 @@ pub mod two_d {
         ],
       });
 
+      // DRAWING layout
       let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
             bind_group_layouts: &[global_layout, &cell_bg_layout],
             push_constant_ranges: &[],
         });
+      
+      // COMPUTE PIPELINE
+      let compute_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("DefSim COMPUTE pipeline layout"),
+        bind_group_layouts: &[],
+        push_constant_ranges: &[],
+      });
+
+      let compute_module = device.create_shader_module(wgpu::include_wgsl!("shaders/2d-compute.wgsl"));
+
+      let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("DefSim COMPUTE pipeline"),
+        layout: Some(&compute_layout),
+        module: &compute_module,
+        entry_point: Some("apply_velocities"),
+        compilation_options: Default::default(),
+        cache: None,
+      });
 
       // PARTICLE DRAWING (geometry)
       let instance_buf = device.create_buffer_init(&BufferInitDescriptor {
@@ -378,6 +409,7 @@ pub mod two_d {
 
       self.instance_buf = Some(instance_buf);
       self.pipeline = Some(pipeline);
+      self.compute_pipeline = Some(compute_pipeline);
 
       self.cells_buf = Some(cell_buffer);
       self.celldims_buf = Some(celldims_buf);
