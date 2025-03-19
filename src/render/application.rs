@@ -16,6 +16,7 @@ pub struct App<'a> {
   window: Option<Arc<Window>>,
   state: Option<State<'a>>,
   time: Instant,
+  startup_time: Instant
 }
 
 impl<'a> ApplicationHandler for App<'a> {
@@ -52,9 +53,11 @@ impl<'a> ApplicationHandler for App<'a> {
       } if state.is_pressed() => println!("ESC pressed"),
       RedrawRequested => {
         self.window().request_redraw();
-        let dt = (Instant::now() - self.time).as_secs_f32();
+        let now = Instant::now();
+        let dt = (now - self.time).as_secs_f32();
+        let total = (now - self.startup_time).as_secs_f32();
 
-        match self.map_state(|s| {s.update(dt); s.render()}) {
+        match self.map_state(|s| {s.update(dt, total); s.render()}) {
           Ok(()) => (),
           Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
             let size = self.window().inner_size();
@@ -83,7 +86,8 @@ impl App<'_> {
       runtime: tokio::runtime::Builder::new_multi_thread().build().unwrap(),
       window: None,
       state: None,
-      time: Instant::now()
+      time: Instant::now(),
+      startup_time: Instant::now()
     }
   }
   fn window(&self) -> Arc<Window> {

@@ -1,5 +1,5 @@
-use bindings::{VIEWPORT_SIZE_LOCATION, VIEWPORT_SIZE_SIZE};
-use std::{num::NonZero, sync::Arc};
+use bindings::{GLOBAL_BIND_LOC, GLOBAL_BIND_SIZE};
+use std::{num::NonZero, sync::Arc, time::Instant};
 use wgpu::{
   Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
   BindGroupLayoutDescriptor, BindGroupLayoutEntry, Buffer, BufferBinding, BufferDescriptor,
@@ -23,16 +23,20 @@ pub(super) struct State<'a> {
   global_layout: BindGroupLayout,
   global_bind: BindGroup,
   viewport_buf: Buffer,
+  dt: f32,
+  total_time: f32,
 }
 
 pub mod bindings {
-  pub const VIEWPORT_SIZE_LOCATION: u32 = 0;
-  pub const VIEWPORT_SIZE_SIZE: u64 = 2u64 * std::mem::size_of::<f32>() as u64;
+  pub const GLOBAL_BIND_LOC: u32 = 0;
+  pub const GLOBAL_BIND_SIZE: u64 = 4u64 * std::mem::size_of::<f32>() as u64;
 }
 
 impl<'a> State<'a> {
-  pub fn update(&mut self, dt: f32) {
+  pub fn update(&mut self, dt: f32, total: f32) {
     self.simulation.as_mut().map(|s| s.step(dt));
+    self.dt = dt;
+    self.total_time = total;
   }
   pub async fn create(window: Arc<Window>) -> Self {
     let instance = wgpu::Instance::new(&InstanceDescriptor {
@@ -89,7 +93,7 @@ impl<'a> State<'a> {
 
     let viewport_buf = device.create_buffer(&BufferDescriptor {
       label: None,
-      size: VIEWPORT_SIZE_SIZE,
+      size: GLOBAL_BIND_SIZE,
       usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
       mapped_at_creation: false,
     });
@@ -97,12 +101,12 @@ impl<'a> State<'a> {
     let global_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
       label: Some("Global Binding Group"),
       entries: &[BindGroupLayoutEntry {
-        binding: VIEWPORT_SIZE_LOCATION,
+        binding: GLOBAL_BIND_LOC,
         visibility: ShaderStages::all(),
         ty: wgpu::BindingType::Buffer {
           ty: wgpu::BufferBindingType::Uniform,
           has_dynamic_offset: false,
-          min_binding_size: NonZero::new(2u64 * std::mem::size_of::<f32>() as u64),
+          min_binding_size: NonZero::new(GLOBAL_BIND_SIZE),
         },
         count: None,
       }],
@@ -111,11 +115,11 @@ impl<'a> State<'a> {
       label: Some("Global Bind Group"),
       layout: &global_layout,
       entries: &[BindGroupEntry {
-        binding: VIEWPORT_SIZE_LOCATION,
+        binding: GLOBAL_BIND_LOC,
         resource: wgpu::BindingResource::Buffer(BufferBinding {
           buffer: &viewport_buf,
           offset: 0,
-          size: NonZero::new(VIEWPORT_SIZE_SIZE),
+          size: NonZero::new(GLOBAL_BIND_SIZE),
         }),
       }],
     });
@@ -132,6 +136,8 @@ impl<'a> State<'a> {
       global_bind,
       viewport_buf,
       global_layout,
+      dt: 0.,
+      total_time: 0.
     }
   }
 
@@ -233,7 +239,7 @@ impl<'a> State<'a> {
     self.queue.write_buffer(
       &self.viewport_buf,
       0,
-      [self.config.width as f32, self.config.height as f32].as_bytes_buffer(),
+      [self.config.width as f32, self.config.height as f32, self.total_time, self.dt].as_bytes_buffer(),
     );
 
     let commands = std::iter::once(encoder.finish());

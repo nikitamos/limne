@@ -11,8 +11,14 @@ struct VertexOutput {
     @location(2) iid: u32,
 };
 
+struct Global {
+  size: vec2<f32>,
+  time: f32,
+  dt: f32
+};
+
 @group(0) @binding(0)
-var<uniform> size: vec2<f32>;
+var<uniform> g: Global;
 
 struct Cell {
   vx: f32,
@@ -108,8 +114,8 @@ fn vs_main(
   // над математикой строки co столбцы матриц преместиша.
 
   let world_to_clip = transpose(mat3x3(
-    2.0 / size.x,       0.0,      -1.0,
-        0.0,        2.0 / size.y, -1.0,
+    2.0 / g.size.x,       0.0,      -1.0,
+        0.0,        2.0 / g.size.y, -1.0,
         0.0,            0.0,      0.0
   ));
   
