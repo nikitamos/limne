@@ -203,7 +203,7 @@ impl<'a> State<'a> {
       self.config.height = size.height;
       self.surface.configure(&self.device, &self.config);
       self.simulation.as_mut().map(|s| {
-        s.on_surface_resized(size);
+        s.on_surface_resized(size, &self.device);
         s.reinit_pipelines(&self.device, self.config.format, &self.global_layout);
       });
     }

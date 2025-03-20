@@ -72,7 +72,7 @@ pub trait Simulation {
     view: &wgpu::TextureView,
   ) -> CommandBuffer;
   fn write_buffers(&self, queue: &wgpu::Queue);
-  fn on_surface_resized(&mut self, size: PhysicalSize<u32>);
+  fn on_surface_resized(&mut self, size: PhysicalSize<u32>, device: &wgpu::Device);
 }
 
 fn make_vec_buf<T>(v: &Vec<T>) -> &[u8] {
@@ -162,7 +162,7 @@ pub mod two_d {
         positions: SwapBuffers::init_with(
           positions.into(),
           &device,
-          &SwapBuffersDescriptor {
+          SwapBuffersDescriptor {
             usage: wgpu::BufferUsages::STORAGE
               | wgpu::BufferUsages::COPY_DST
               | wgpu::BufferUsages::COPY_SRC
@@ -182,7 +182,7 @@ pub mod two_d {
         cells: SwapBuffers::init_with(
           cells,
           device,
-          &SwapBuffersDescriptor {
+          SwapBuffersDescriptor {
             usage: wgpu::BufferUsages::STORAGE
               | wgpu::BufferUsages::COPY_DST
               | wgpu::BufferUsages::COPY_SRC,
@@ -224,10 +224,6 @@ pub mod two_d {
     fn cell_by_index(&self, x: usize, y: usize) -> DefaultCell {
       self.cells.cur()[self.cell_index(x, y)].clone()
     }
-    fn mut_by_index(&mut self, x: usize, y: usize) -> &mut DefaultCell {
-      let i = self.cell_index(x, y);
-      &mut self.cells.cur_mut()[i]
-    }
     fn cell_index(&self, x: usize, y: usize) -> usize {
       y * self.x_cells + x
     }
@@ -249,6 +245,7 @@ pub mod two_d {
       view: &wgpu::TextureView,
     ) -> wgpu::CommandBuffer {
       self.positions.swap(&mut encoder);
+      self.cells.swap(&mut encoder);
       {
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
           label: Some("DefSim COMPUTE pass"),
@@ -385,14 +382,6 @@ pub mod two_d {
         cache: None,
       });
 
-      // CELLS
-      // -- NO LONGER NEEDED?
-      // let cell_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-      //   label: Some("Cell Buffer"),
-      //   size: make_vec_buf(&self.cells).len() as u64,
-      //   usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
-      //   mapped_at_creation: false,
-      // });
       let celldims_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Cell dimension buffer"),
         size: 2 * std::mem::size_of::<u32>() as u64 + std::mem::size_of::<f32>() as u64,
@@ -440,14 +429,17 @@ pub mod two_d {
       queue.write_buffer(self.celldims_buf.as_ref().unwrap(), 0, &a);
     }
 
-    fn on_surface_resized(&mut self, size: PhysicalSize<u32>) {
-      self.positions.cur_mut().par_iter_mut().for_each(|p| {
+    fn on_surface_resized(&mut self, size: PhysicalSize<u32>, device: &wgpu::Device) {
+      self.width = size.width as f32;
+      self.height = size.height as f32;
+      self.positions.reset(self.positions
+        .cur().0
+        .clone().into_iter().map(|mut p| {
         let mut rng = rand::rng();
         p.x = rng.sample(rand::distr::Uniform::new(0.0, size.width as f32).unwrap());
         p.y = rng.sample(rand::distr::Uniform::new(0.0, size.height as f32).unwrap());
-      });
-      self.width = size.width as f32;
-      self.height = size.height as f32;
+        p
+      }).collect::<Vec<_>>().into(), device);
 
 
       // Create cells
@@ -455,25 +447,27 @@ pub mod two_d {
       let y_cells = (size.height).div_ceil(CELL_SIZE) as usize;
       println!("Cell count: {}", x_cells * y_cells);
 
-      // let cells = vec![DefaultCell::default(); x_cells * y_cells];
-      // let direction = rand::distr::Uniform::new(0.0f32, f32::consts::TAU).unwrap();
-      // let vel_distr = rand::distr::Uniform::new(200.0, 1500.0).unwrap();
+      let mut cells = vec![DefaultCell::default(); x_cells * y_cells];
+      let direction = rand::distr::Uniform::new(0.0f32, f32::consts::TAU).unwrap();
+      let vel_distr = rand::distr::Uniform::new(200.0, 1500.0).unwrap();
 
-      // let cells = self.cells.cur().clone();
-      // self.cells.cells.into_par_iter()
-      //   .map(|mut c| {
-      //     let mut rng = rand::rng();
-      //     let v = rng.sample(vel_distr);
-      //     let angle = rng.sample(direction);
-      //     c.velocity.x = angle.cos() * v;
-      //     c.velocity.y = angle.sin() * v;
-      //     c
-      //   })
-      //   .collect();
+      self.cells.reset(
+        cells
+          .into_par_iter()
+          .map(|mut c| {
+            let mut rng = rand::rng();
+            let v = rng.sample(vel_distr);
+            let angle = rng.sample(direction);
+            c.velocity.x = angle.cos() * v;
+            c.velocity.y = angle.sin() * v;
+            c
+          })
+          .collect(),
+        device,
+      );
 
-      // self.x_cells = x_cells;
-      // self.y_cells = y_cells;
-      // self.cells = cells;
+      self.x_cells = x_cells;
+      self.y_cells = y_cells;
     }
   }
 }
