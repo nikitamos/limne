@@ -1,6 +1,7 @@
 use core::slice;
 use std::ops::{Deref, DerefMut};
 
+use two_d::DefaultCell;
 use wgpu::{util::DeviceExt, CommandBuffer, CommandEncoder, VertexBufferLayout};
 use winit::dpi::PhysicalSize;
 
@@ -65,7 +66,7 @@ pub trait Simulation {
     self.init_pipelines(device, format, global_layout);
   }
   fn run_passes(
-    &self,
+    &mut self,
     encoder: CommandEncoder,
     global_bind_group: &wgpu::BindGroup,
     view: &wgpu::TextureView,
@@ -76,6 +77,12 @@ pub trait Simulation {
 
 fn make_vec_buf<T>(v: &Vec<T>) -> &[u8] {
   unsafe { slice::from_raw_parts(v[..].as_ptr().cast(), v.len() * std::mem::size_of::<T>()) }
+}
+
+impl AsBuffer for Vec<DefaultCell> {
+  fn as_bytes_buffer(&self) -> &[u8] {
+    make_vec_buf(self)
+  }
 }
 
 pub mod two_d {
@@ -94,7 +101,7 @@ pub mod two_d {
 
   #[repr(C)]
   #[derive(Default, Clone)]
-  struct DefaultCell {
+  pub(super) struct DefaultCell {
     pub velocity: NumVector3D<f32>,
     pub pressure: f32,
     pub density: f32,
@@ -102,12 +109,12 @@ pub mod two_d {
 
   pub struct DefaultSim {
     positions: SwapBuffers<ParticleVector<f32>>,
-    cells: Vec<DefaultCell>,
+    cells: SwapBuffers<Vec<DefaultCell>>,
     compute_pipeline: Option<wgpu::ComputePipeline>,
     pipeline: Option<wgpu::RenderPipeline>,
     cells_buf: Option<wgpu::Buffer>,
     celldims_buf: Option<wgpu::Buffer>,
-    cell_bind_group: Option<wgpu::BindGroup>,
+    grid_bg: Option<wgpu::BindGroup>,
     x_cells: usize,
     y_cells: usize,
     height: f32,
@@ -142,12 +149,14 @@ pub mod two_d {
 
       for i in 0..y_cells {
         cells[i].velocity.y = 0.0;
-        cells[(y_cells-1)*x_cells - 1].velocity.y = 0.0;
+        cells[(y_cells - 1) * x_cells - 1].velocity.y = 0.0;
       }
-      for j in 0..x_cells {{
-        cells[y_cells * j].velocity.x = 0.;
-        cells[y_cells*(j+1) - 1].velocity.x = 0.;
-      }}
+      for j in 0..x_cells {
+        {
+          cells[y_cells * j].velocity.x = 0.;
+          cells[y_cells * (j + 1) - 1].velocity.x = 0.;
+        }
+      }
 
       let mut out = Self {
         positions: SwapBuffers::init_with(
@@ -158,31 +167,42 @@ pub mod two_d {
               | wgpu::BufferUsages::COPY_DST
               | wgpu::BufferUsages::COPY_SRC
               | wgpu::BufferUsages::VERTEX,
-            visibility: ShaderStages::COMPUTE,
+            visibility: ShaderStages::all(),
             ty: wgpu::BufferBindingType::Storage { read_only: false },
             has_dynamic_offset: false,
           },
         ),
         pipeline: None,
         compute_pipeline: None,
-        cell_bind_group: None,
+        grid_bg: None,
         cells_buf: None,
         celldims_buf: None,
         x_cells,
         y_cells,
-        cells,
+        cells: SwapBuffers::init_with(
+          cells,
+          device,
+          &SwapBuffersDescriptor {
+            usage: wgpu::BufferUsages::STORAGE
+              | wgpu::BufferUsages::COPY_DST
+              | wgpu::BufferUsages::COPY_SRC,
+            visibility: ShaderStages::all(),
+            ty: wgpu::BufferBindingType::Storage { read_only: false },
+            has_dynamic_offset: false,
+          },
+        ),
         height,
         width,
       };
 
-      for i in 0..x_cells {
-        out.cells[i].velocity = Default::default();
-        out.cells[(y_cells - 1) * x_cells + i] = Default::default();
-      }
-      for j in 1..(y_cells - 1) {
-        out.cells[j * (x_cells - 1)] = Default::default();
-        out.cells[(j * x_cells) - 1] = Default::default();
-      }
+      // for i in 0..x_cells {
+      //   out.cells[i].velocity = Default::default();
+      //   out.cells[(y_cells - 1) * x_cells + i] = Default::default();
+      // }
+      // for j in 1..(y_cells - 1) {
+      //   out.cells[j * (x_cells - 1)] = Default::default();
+      //   out.cells[(j * x_cells) - 1] = Default::default();
+      // }
 
       out
     }
@@ -194,6 +214,7 @@ pub mod two_d {
       (
         self
           .cells
+          .cur()
           .get(idx.1 * self.x_cells + idx.0)
           .unwrap()
           .clone(),
@@ -201,11 +222,11 @@ pub mod two_d {
       )
     }
     fn cell_by_index(&self, x: usize, y: usize) -> DefaultCell {
-      self.cells[self.cell_index(x, y)].clone()
+      self.cells.cur()[self.cell_index(x, y)].clone()
     }
     fn mut_by_index(&mut self, x: usize, y: usize) -> &mut DefaultCell {
       let i = self.cell_index(x, y);
-      &mut self.cells[i]
+      &mut self.cells.cur_mut()[i]
     }
     fn cell_index(&self, x: usize, y: usize) -> usize {
       y * self.x_cells + x
@@ -222,11 +243,12 @@ pub mod two_d {
     fn step(&mut self, _dt: f32) {}
 
     fn run_passes(
-      &self,
+      &mut self,
       mut encoder: wgpu::CommandEncoder,
       global_bind_group: &wgpu::BindGroup,
       view: &wgpu::TextureView,
     ) -> wgpu::CommandBuffer {
+      self.positions.swap(&mut encoder);
       {
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
           label: Some("DefSim COMPUTE pass"),
@@ -234,8 +256,9 @@ pub mod two_d {
         });
         pass.set_pipeline(self.compute_pipeline.as_ref().unwrap());
         pass.set_bind_group(0, global_bind_group, &[]);
-        pass.set_bind_group(1, self.cell_bind_group.as_ref().unwrap(), &[]);
+        pass.set_bind_group(1, self.grid_bg.as_ref().unwrap(), &[]);
         pass.set_bind_group(2, self.positions.cur_group(), &[]);
+        pass.set_bind_group(3, self.cells.cur_group(), &[]);
         let mut x: u32 = self.positions.cur().len() as u32;
         let mut y: u32 = 1;
         if self.positions.cur().len() >= (u16::MAX as usize) {
@@ -263,7 +286,8 @@ pub mod two_d {
         pass.set_pipeline(self.pipeline.as_ref().unwrap());
         pass.set_vertex_buffer(0, self.positions.cur_buf().slice(..));
         pass.set_bind_group(0, global_bind_group, &[]);
-        pass.set_bind_group(1, &self.cell_bind_group, &[]);
+        pass.set_bind_group(1, &self.grid_bg, &[]);
+        pass.set_bind_group(2, self.cells.cur_group(), &[]);
         pass.draw(0..3, 0..(self.positions.cur().len() as u32));
       }
       encoder.finish()
@@ -275,25 +299,15 @@ pub mod two_d {
       format: wgpu::TextureFormat,
       global_layout: &wgpu::BindGroupLayout,
     ) {
-      // CELL BINDING GROUP (for DRAWING)
-      let cell_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("Cell binding layout"),
+      // CELL BINDING GROUP (for DRAWING & COMPUTE)
+      let grid_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Cell grid binding layout"),
         entries: &[
           wgpu::BindGroupLayoutEntry {
             binding: 0,
             visibility: wgpu::ShaderStages::all(),
             ty: wgpu::BindingType::Buffer {
-              ty: wgpu::BufferBindingType::Storage { read_only: true },
-              has_dynamic_offset: false,
-              min_binding_size: None,
-            },
-            count: None,
-          },
-          wgpu::BindGroupLayoutEntry {
-            binding: 1,
-            visibility: wgpu::ShaderStages::all(),
-            ty: wgpu::BindingType::Buffer {
-              ty: wgpu::BufferBindingType::Storage { read_only: true },
+              ty: wgpu::BufferBindingType::Storage { read_only: false },
               has_dynamic_offset: false,
               min_binding_size: None,
             },
@@ -302,18 +316,11 @@ pub mod two_d {
         ],
       });
 
-      // DRAWING layout
-      let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: None,
-        bind_group_layouts: &[global_layout, &cell_bg_layout],
-        push_constant_ranges: &[],
-      });
-
+      
       // COMPUTE PIPELINE
-
       let compute_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("DefSim COMPUTE pipeline layout"),
-        bind_group_layouts: &[global_layout, &cell_bg_layout, &self.positions.cur_layout()],
+        bind_group_layouts: &[global_layout, &grid_bg_layout, &self.positions.cur_layout(), self.cells.cur_layout()],
         push_constant_ranges: &[],
       });
 
@@ -328,8 +335,16 @@ pub mod two_d {
         compilation_options: Default::default(),
         cache: None,
       });
-
+      
       // PARTICLE DRAWING (geometry)
+
+      // DRAWING layout
+      let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: None,
+        bind_group_layouts: &[global_layout, &grid_bg_layout, self.cells.cur_layout()],
+        push_constant_ranges: &[],
+      });
+
       let module = device.create_shader_module(wgpu::include_wgsl!("shaders/2d-basic.wgsl"));
 
       let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -371,32 +386,25 @@ pub mod two_d {
       });
 
       // CELLS
-      let cell_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Cell Buffer"),
-        size: make_vec_buf(&self.cells).len() as u64,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
-        mapped_at_creation: false,
-      });
+      // -- NO LONGER NEEDED?
+      // let cell_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+      //   label: Some("Cell Buffer"),
+      //   size: make_vec_buf(&self.cells).len() as u64,
+      //   usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
+      //   mapped_at_creation: false,
+      // });
       let celldims_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Cell dimension buffer"),
         size: 2 * std::mem::size_of::<u32>() as u64 + std::mem::size_of::<f32>() as u64,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
         mapped_at_creation: false,
       });
-      let cell_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+      let grid_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("Cell bind group"),
-        layout: &cell_bg_layout,
+        layout: &grid_bg_layout,
         entries: &[
           wgpu::BindGroupEntry {
             binding: 0,
-            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-              buffer: &cell_buffer,
-              offset: 0,
-              size: None,
-            }),
-          },
-          wgpu::BindGroupEntry {
-            binding: 1,
             resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
               buffer: &celldims_buf,
               offset: 0,
@@ -409,17 +417,16 @@ pub mod two_d {
       self.pipeline = Some(pipeline);
       self.compute_pipeline = Some(compute_pipeline);
 
-      self.cells_buf = Some(cell_buffer);
       self.celldims_buf = Some(celldims_buf);
-      self.cell_bind_group = Some(cell_bg);
+      self.grid_bg = Some(grid_bg);
     }
 
     fn write_buffers(&self, queue: &wgpu::Queue) {
-      queue.write_buffer(
-        self.cells_buf.as_ref().unwrap(),
-        0,
-        make_vec_buf(&self.cells),
-      );
+      // queue.write_buffer(
+      //   self.cells_buf.as_ref().unwrap(),
+      //   0,
+      //   make_vec_buf(&self.cells),
+      // );
       let celldims = (self.x_cells as u32, self.y_cells as u32);
       // TODO: make sane implementation
       let a: Vec<_> = celldims
@@ -439,31 +446,34 @@ pub mod two_d {
         p.x = rng.sample(rand::distr::Uniform::new(0.0, size.width as f32).unwrap());
         p.y = rng.sample(rand::distr::Uniform::new(0.0, size.height as f32).unwrap());
       });
+      self.width = size.width as f32;
+      self.height = size.height as f32;
+
 
       // Create cells
       let x_cells = (size.width).div_ceil(CELL_SIZE) as usize;
       let y_cells = (size.height).div_ceil(CELL_SIZE) as usize;
       println!("Cell count: {}", x_cells * y_cells);
 
-      let cells = vec![DefaultCell::default(); x_cells * y_cells];
-      let direction = rand::distr::Uniform::new(0.0f32, f32::consts::TAU).unwrap();
-      let vel_distr = rand::distr::Uniform::new(200.0, 1500.0).unwrap();
+      // let cells = vec![DefaultCell::default(); x_cells * y_cells];
+      // let direction = rand::distr::Uniform::new(0.0f32, f32::consts::TAU).unwrap();
+      // let vel_distr = rand::distr::Uniform::new(200.0, 1500.0).unwrap();
 
-      let cells = cells
-        .into_par_iter()
-        .map(|mut c| {
-          let mut rng = rand::rng();
-          let v = rng.sample(vel_distr);
-          let angle = rng.sample(direction);
-          c.velocity.x = angle.cos() * v;
-          c.velocity.y = angle.sin() * v;
-          c
-        })
-        .collect();
+      // let cells = self.cells.cur().clone();
+      // self.cells.cells.into_par_iter()
+      //   .map(|mut c| {
+      //     let mut rng = rand::rng();
+      //     let v = rng.sample(vel_distr);
+      //     let angle = rng.sample(direction);
+      //     c.velocity.x = angle.cos() * v;
+      //     c.velocity.y = angle.sin() * v;
+      //     c
+      //   })
+      //   .collect();
 
-      self.x_cells = x_cells;
-      self.y_cells = y_cells;
-      self.cells = cells;
+      // self.x_cells = x_cells;
+      // self.y_cells = y_cells;
+      // self.cells = cells;
     }
   }
 }

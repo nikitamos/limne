@@ -253,7 +253,7 @@ impl<'a> State<'a> {
     );
 
     let commands = std::iter::once(encoder.finish());
-    let a = self.simulation.as_ref().map(|sim| {
+    let a = self.simulation.as_mut().map(|sim| {
       let sim_encoder = self
         .device
         .create_command_encoder(&CommandEncoderDescriptor {

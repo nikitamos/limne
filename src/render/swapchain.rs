@@ -1,9 +1,9 @@
-use std::{default, num::NonZero};
+use std::num::NonZero;
 use wgpu::{
   util::{BufferInitDescriptor, DeviceExt},
   BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-  BindGroupLayoutEntry, Buffer, BufferBinding, BufferBindingType, BufferUsages, Device, Queue,
-  ShaderStages,
+  BindGroupLayoutEntry, Buffer, BufferBinding, BufferBindingType, BufferUsages, CommandEncoder,
+  Device, Queue, ShaderStages,
 };
 
 use super::simulation::AsBuffer;
@@ -43,7 +43,7 @@ impl<T: Clone + AsBuffer> SwapBuffers<T> {
       ty: wgpu::BindingType::Buffer {
         ty: desc.ty,
         has_dynamic_offset: desc.has_dynamic_offset,
-        min_binding_size: NonZero::new(bytes.len() as u64),
+        min_binding_size: None, //NonZero::new(bytes.len() as u64),
       },
       count: None,
     };
@@ -108,7 +108,8 @@ impl<T: Clone + AsBuffer> SwapBuffers<T> {
   pub fn cur_mut(&mut self) -> &mut T {
     &mut self.data[self.cur]
   }
-  pub fn swap(&mut self) {
+  pub fn swap(&mut self, encoder: &mut CommandEncoder) {
+    encoder.copy_buffer_to_buffer(self.cur_buf(), 0, self.old().0, 0, self.cur_size());
     self.cur = 1 - self.cur;
   }
   pub fn cur_size(&self) -> u64 {

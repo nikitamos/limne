@@ -12,8 +12,6 @@ struct Cell {
   density: f32
 };
 
-@group(0) @binding(0)
-var<uniform> g: Global;
 
 struct Grid {
   // grid: vec2<u32>,
@@ -22,10 +20,25 @@ struct Grid {
   cell_side: f32
 };
 
+// Grid (dimensions, cell sides)
 @group(1) @binding(0)
-var<storage> cur_cells: array<Cell>;
-@group(1) @binding(1)
-var<storage> grid: Grid;
+var<storage, read_write> grid: Grid;
+
+// Global, obviously
+@group(0) @binding(0)
+var<uniform> g: Global;
+
+// Positions
+@group(2) @binding(0)
+var<storage, read_write> positions: array<Vec3>;
+@group(2) @binding(1)
+var<storage, read_write> old_positions: array<Vec3>;
+
+// New and all cells themselves (speed, density, pressure)
+@group(3) @binding(0)
+var<storage, read_write> cur_cells: array<Cell>;
+@group(3) @binding(1)
+var<storage, read_write> old_cells: array<Cell>;
 
 fn get_cell(world_pos: vec2<f32>) -> Cell {
   var c: Cell;
@@ -52,10 +65,6 @@ struct Vec3 {
   z: f32
 }
 
-@group(2) @binding(0)
-var<storage, read_write> positions: array<Vec3>;
-@group(2) @binding(1)
-var<storage, read_write> old_positions: array<Vec3>;
 
 
 @compute @workgroup_size(1)

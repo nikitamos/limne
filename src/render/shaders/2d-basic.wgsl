@@ -17,8 +17,6 @@ struct Global {
   dt: f32
 };
 
-@group(0) @binding(0)
-var<uniform> g: Global;
 
 struct Cell {
   vx: f32,
@@ -35,10 +33,18 @@ struct Grid {
   cell_side: f32
 };
 
+// BINDING BEGIN
+
+@group(0) @binding(0)
+var<uniform> g: Global;
+
 @group(1) @binding(0)
-var<storage> cells: array<Cell>;
-@group(1) @binding(1)
-var<storage> grid: Grid;
+var<storage, read_write> grid: Grid;
+
+@group(2) @binding(0)
+var<storage, read_write> cells: array<Cell>;
+
+// BINDINGS END
 
 fn get_cell(world_pos: vec2<f32>) -> Cell {
   var c: Cell;
@@ -57,8 +63,8 @@ const MIN_VELOCITY = 200.0;
 const MAX_VELOCITY = 1500.0;
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-  // let cell = get_cell(vec2(in.pos.x, in.pos.y));
-  let cell = get_cell(vec2(in.particle_pos.x, in.particle_pos.y));
+  let cell = get_cell(vec2(in.pos.x, in.pos.y));
+  // let cell = get_cell(vec2(in.particle_pos.x, in.particle_pos.y));
   let len = length(vec2(cell.vx, cell.vy));
   let r = lerp(MIN_VELOCITY, MAX_VELOCITY, 0.0, 1.0, len);
 
