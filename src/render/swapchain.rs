@@ -13,7 +13,7 @@ pub struct SwapBuffers<T> {
   data: [T; 2],
   group: [BindGroup; 2],
   cur: usize,
-  pub layout: BindGroupLayout,
+  layout: [BindGroupLayout; 2],
 }
 
 pub struct SwapBuffersDescriptor {
@@ -54,7 +54,7 @@ impl<T: Clone + AsBuffer> SwapBuffers<T> {
       label: None,
       entries: &[entry0, entry1],
     });
-    let layout2 = dev.create_bind_group_layout(&BindGroupLayoutDescriptor {
+    let layout1 = dev.create_bind_group_layout(&BindGroupLayoutDescriptor {
       label: None,
       entries: &[entry1, entry0],
     });
@@ -84,7 +84,7 @@ impl<T: Clone + AsBuffer> SwapBuffers<T> {
 
     let bg2 = dev.create_bind_group(&BindGroupDescriptor {
       label: None,
-      layout: &layout2,
+      layout: &layout1,
       entries: &[entry1, entry0],
     });
 
@@ -93,7 +93,7 @@ impl<T: Clone + AsBuffer> SwapBuffers<T> {
       data: [state.clone(), state],
       group: [bg1, bg2],
       cur: 0,
-      layout: layout0,
+      layout: [layout0, layout1],
     }
   }
   pub fn cur(&self) -> &T {
@@ -122,5 +122,8 @@ impl<T: Clone + AsBuffer> SwapBuffers<T> {
   }
   pub fn cur_group(&self) -> &BindGroup {
     &self.group[self.cur]
+  }
+  pub fn cur_layout(&self) -> &BindGroupLayout {
+    &self.layout[self.cur]
   }
 }

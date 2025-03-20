@@ -69,7 +69,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 
 
-const delta = vec2(5.0, 0.0);
+const delta = vec2(3.0, 0.0);
 const PI = 3.1515926535898;
 
 @vertex

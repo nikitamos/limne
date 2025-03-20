@@ -54,6 +54,8 @@ struct Vec3 {
 
 @group(2) @binding(0)
 var<storage, read_write> positions: array<Vec3>;
+@group(2) @binding(1)
+var<storage, read_write> old_positions: array<Vec3>;
 
 
 @compute @workgroup_size(1)

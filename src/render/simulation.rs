@@ -83,8 +83,8 @@ pub mod two_d {
   use rand::Rng;
   use rayon::prelude::*;
   use wgpu::{
-    util::BufferInitDescriptor, vertex_attr_array, MultisampleState, RenderPassColorAttachment,
-    RenderPipelineDescriptor, ShaderStages,
+    vertex_attr_array, MultisampleState, RenderPassColorAttachment, RenderPipelineDescriptor,
+    ShaderStages,
   };
   use winit::dpi::PhysicalSize;
 
@@ -105,7 +105,6 @@ pub mod two_d {
     cells: Vec<DefaultCell>,
     compute_pipeline: Option<wgpu::ComputePipeline>,
     pipeline: Option<wgpu::RenderPipeline>,
-    instance_buf: Option<wgpu::Buffer>,
     cells_buf: Option<wgpu::Buffer>,
     celldims_buf: Option<wgpu::Buffer>,
     cell_bind_group: Option<wgpu::BindGroup>,
@@ -143,8 +142,7 @@ pub mod two_d {
 
       for i in 0..y_cells {
         cells[i].velocity.y = 0.0;
-        cells[i].velocity.x = 0.0;
-        cells[(y_cells-1)*x_cells + i].velocity.y = 0.0;
+        cells[(y_cells-1)*x_cells - 1].velocity.y = 0.0;
       }
       for j in 0..x_cells {{
         cells[y_cells * j].velocity.x = 0.;
@@ -158,7 +156,8 @@ pub mod two_d {
           &SwapBuffersDescriptor {
             usage: wgpu::BufferUsages::STORAGE
               | wgpu::BufferUsages::COPY_DST
-              | wgpu::BufferUsages::COPY_SRC,
+              | wgpu::BufferUsages::COPY_SRC
+              | wgpu::BufferUsages::VERTEX,
             visibility: ShaderStages::COMPUTE,
             ty: wgpu::BufferBindingType::Storage { read_only: false },
             has_dynamic_offset: false,
@@ -167,7 +166,6 @@ pub mod two_d {
         pipeline: None,
         compute_pipeline: None,
         cell_bind_group: None,
-        instance_buf: None,
         cells_buf: None,
         celldims_buf: None,
         x_cells,
@@ -221,9 +219,7 @@ pub mod two_d {
   };
 
   impl Simulation for DefaultSim {
-    fn step(&mut self, dt: f32) {
-      let len = self.positions.cur().len();
-    }
+    fn step(&mut self, _dt: f32) {}
 
     fn run_passes(
       &self,
@@ -240,15 +236,15 @@ pub mod two_d {
         pass.set_bind_group(0, global_bind_group, &[]);
         pass.set_bind_group(1, self.cell_bind_group.as_ref().unwrap(), &[]);
         pass.set_bind_group(2, self.positions.cur_group(), &[]);
-        pass.dispatch_workgroups(self.positions.cur().len() as u32, 1, 1);
+        let mut x: u32 = self.positions.cur().len() as u32;
+        let mut y: u32 = 1;
+        if self.positions.cur().len() >= (u16::MAX as usize) {
+          y = x.div_ceil(u16::MAX as u32);
+          x /= u16::MAX as u32;
+        }
+        pass.dispatch_workgroups(x, y, 1);
       }
-      encoder.copy_buffer_to_buffer(
-        self.positions.cur_buf(),
-        0,
-        self.instance_buf.as_ref().unwrap(),
-        0,
-        self.positions.cur_size(),
-      );
+
       {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
           label: None,
@@ -265,7 +261,7 @@ pub mod two_d {
           occlusion_query_set: None,
         });
         pass.set_pipeline(self.pipeline.as_ref().unwrap());
-        pass.set_vertex_buffer(0, self.instance_buf.as_ref().unwrap().slice(..));
+        pass.set_vertex_buffer(0, self.positions.cur_buf().slice(..));
         pass.set_bind_group(0, global_bind_group, &[]);
         pass.set_bind_group(1, &self.cell_bind_group, &[]);
         pass.draw(0..3, 0..(self.positions.cur().len() as u32));
@@ -317,7 +313,7 @@ pub mod two_d {
 
       let compute_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("DefSim COMPUTE pipeline layout"),
-        bind_group_layouts: &[global_layout, &cell_bg_layout, &self.positions.layout],
+        bind_group_layouts: &[global_layout, &cell_bg_layout, &self.positions.cur_layout()],
         push_constant_ranges: &[],
       });
 
@@ -334,12 +330,6 @@ pub mod two_d {
       });
 
       // PARTICLE DRAWING (geometry)
-      let instance_buf = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("Instance buffer"),
-        contents: self.positions.cur().as_bytes_buffer(),
-        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-      });
-
       let module = device.create_shader_module(wgpu::include_wgsl!("shaders/2d-basic.wgsl"));
 
       let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -416,7 +406,6 @@ pub mod two_d {
         ],
       });
 
-      self.instance_buf = Some(instance_buf);
       self.pipeline = Some(pipeline);
       self.compute_pipeline = Some(compute_pipeline);
 
@@ -426,13 +415,6 @@ pub mod two_d {
     }
 
     fn write_buffers(&self, queue: &wgpu::Queue) {
-      // OLD: copy positions to the instance buffer
-      // queue.write_buffer(
-      //   self.instance_buf.as_ref().unwrap(),
-      //   0,
-      //   self.positions.cur().as_bytes_buffer(),
-      // );
-
       queue.write_buffer(
         self.cells_buf.as_ref().unwrap(),
         0,
