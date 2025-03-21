@@ -1,5 +1,5 @@
 use bindings::{GLOBAL_BIND_LOC, GLOBAL_BIND_SIZE};
-use std::{num::NonZero, sync::Arc, time::Instant};
+use std::{num::NonZero, sync::Arc};
 use wgpu::{
   Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
   BindGroupLayoutDescriptor, BindGroupLayoutEntry, Buffer, BufferBinding, BufferDescriptor,
@@ -40,7 +40,7 @@ impl<'a> State<'a> {
   }
   pub async fn create(window: Arc<Window>) -> Self {
     let instance = wgpu::Instance::new(&InstanceDescriptor {
-      backends: Backends::VULKAN,
+      backends: Backends::GL,
       ..Default::default()
     });
 

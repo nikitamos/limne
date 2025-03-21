@@ -110,9 +110,9 @@ pub mod two_d {
   pub struct DefaultSim {
     positions: SwapBuffers<ParticleVector<f32>>,
     cells: SwapBuffers<Vec<DefaultCell>>,
-    compute_pipeline: Option<wgpu::ComputePipeline>,
+    move_pipeline: Option<wgpu::ComputePipeline>,
+    mass_consv_pipeline: Option<wgpu::ComputePipeline>,
     pipeline: Option<wgpu::RenderPipeline>,
-    cells_buf: Option<wgpu::Buffer>,
     celldims_buf: Option<wgpu::Buffer>,
     grid_bg: Option<wgpu::BindGroup>,
     x_cells: usize,
@@ -121,7 +121,7 @@ pub mod two_d {
     width: f32,
   }
 
-  const CELL_SIZE: u32 = 10;
+  const CELL_SIZE: u32 = 7;
   impl DefaultSim {
     pub fn new(count: usize, device: &wgpu::Device, size: PhysicalSize<u32>) -> Self {
       let mut positions: Vec<NumVector3D<f32>> = vec![Default::default(); count];
@@ -173,9 +173,9 @@ pub mod two_d {
           },
         ),
         pipeline: None,
-        compute_pipeline: None,
+        move_pipeline: None,
+        mass_consv_pipeline: None,
         grid_bg: None,
-        cells_buf: None,
         celldims_buf: None,
         x_cells,
         y_cells,
@@ -194,15 +194,6 @@ pub mod two_d {
         height,
         width,
       };
-
-      // for i in 0..x_cells {
-      //   out.cells[i].velocity = Default::default();
-      //   out.cells[(y_cells - 1) * x_cells + i] = Default::default();
-      // }
-      // for j in 1..(y_cells - 1) {
-      //   out.cells[j * (x_cells - 1)] = Default::default();
-      //   out.cells[(j * x_cells) - 1] = Default::default();
-      // }
 
       out
     }
@@ -251,7 +242,7 @@ pub mod two_d {
           label: Some("DefSim COMPUTE pass"),
           timestamp_writes: None,
         });
-        pass.set_pipeline(self.compute_pipeline.as_ref().unwrap());
+        pass.set_pipeline(self.move_pipeline.as_ref().unwrap());
         pass.set_bind_group(0, global_bind_group, &[]);
         pass.set_bind_group(1, self.grid_bg.as_ref().unwrap(), &[]);
         pass.set_bind_group(2, self.positions.cur_group(), &[]);
@@ -263,6 +254,8 @@ pub mod two_d {
           x /= u16::MAX as u32;
         }
         pass.dispatch_workgroups(x, y, 1);
+        pass.set_pipeline(self.mass_consv_pipeline.as_ref().unwrap());
+        pass.dispatch_workgroups(self.x_cells as u32, self.y_cells as u32, 1);
       }
 
       {
@@ -314,7 +307,7 @@ pub mod two_d {
       });
 
       
-      // COMPUTE PIPELINE
+      // COMPUTE PIPELINES
       let compute_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("DefSim COMPUTE pipeline layout"),
         bind_group_layouts: &[global_layout, &grid_bg_layout, &self.positions.cur_layout(), self.cells.cur_layout()],
@@ -324,14 +317,17 @@ pub mod two_d {
       let compute_module =
         device.create_shader_module(wgpu::include_wgsl!("shaders/2d-compute.wgsl"));
 
-      let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+      let mut compute_desc = wgpu::ComputePipelineDescriptor {
         label: Some("DefSim COMPUTE pipeline"),
         layout: Some(&compute_layout),
         module: &compute_module,
         entry_point: Some("apply_velocities"),
         compilation_options: Default::default(),
         cache: None,
-      });
+      };
+      let compute_pipeline = device.create_compute_pipeline(&compute_desc);
+      compute_desc.entry_point = Some("mass_conservation");
+      let mass_consv_pipeline = device.create_compute_pipeline(&compute_desc);
       
       // PARTICLE DRAWING (geometry)
 
@@ -404,18 +400,14 @@ pub mod two_d {
       });
 
       self.pipeline = Some(pipeline);
-      self.compute_pipeline = Some(compute_pipeline);
+      self.move_pipeline = Some(compute_pipeline);
+      self.mass_consv_pipeline = Some(mass_consv_pipeline);
 
       self.celldims_buf = Some(celldims_buf);
       self.grid_bg = Some(grid_bg);
     }
 
     fn write_buffers(&self, queue: &wgpu::Queue) {
-      // queue.write_buffer(
-      //   self.cells_buf.as_ref().unwrap(),
-      //   0,
-      //   make_vec_buf(&self.cells),
-      // );
       let celldims = (self.x_cells as u32, self.y_cells as u32);
       // TODO: make sane implementation
       let a: Vec<_> = celldims
@@ -432,12 +424,15 @@ pub mod two_d {
     fn on_surface_resized(&mut self, size: PhysicalSize<u32>, device: &wgpu::Device) {
       self.width = size.width as f32;
       self.height = size.height as f32;
+
+      let x_distr = rand::distr::Uniform::new(0.0, self.width).unwrap();
+      let y_distr = rand::distr::Uniform::new(0.0, self.height).unwrap();
       self.positions.reset(self.positions
         .cur().0
         .clone().into_iter().map(|mut p| {
         let mut rng = rand::rng();
-        p.x = rng.sample(rand::distr::Uniform::new(0.0, size.width as f32).unwrap());
-        p.y = rng.sample(rand::distr::Uniform::new(0.0, size.height as f32).unwrap());
+        p.x = rng.sample(x_distr);
+        p.y = rng.sample(y_distr);
         p
       }).collect::<Vec<_>>().into(), device);
 
@@ -447,9 +442,9 @@ pub mod two_d {
       let y_cells = (size.height).div_ceil(CELL_SIZE) as usize;
       println!("Cell count: {}", x_cells * y_cells);
 
-      let mut cells = vec![DefaultCell::default(); x_cells * y_cells];
+      let cells = vec![DefaultCell::default(); x_cells * y_cells];
       let direction = rand::distr::Uniform::new(0.0f32, f32::consts::TAU).unwrap();
-      let vel_distr = rand::distr::Uniform::new(200.0, 1500.0).unwrap();
+      let vel_distr = rand::distr::Uniform::new(1400.0, 1500.0).unwrap();
 
       self.cells.reset(
         cells

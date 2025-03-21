@@ -63,8 +63,8 @@ const MIN_VELOCITY = 200.0;
 const MAX_VELOCITY = 1500.0;
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-  let cell = get_cell(vec2(in.pos.x, in.pos.y));
-  // let cell = get_cell(vec2(in.particle_pos.x, in.particle_pos.y));
+  // let cell = get_cell(vec2(in.pos.x, in.pos.y));
+  let cell = get_cell(vec2(in.particle_pos.x, in.particle_pos.y));
   let len = length(vec2(cell.vx, cell.vy));
   let r = lerp(MIN_VELOCITY, MAX_VELOCITY, 0.0, 1.0, len);
 
