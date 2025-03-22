@@ -85,7 +85,7 @@ fn apply_velocities(@builtin(global_invocation_id) inv_id: vec3<u32>) {
   }
 }
 
-const MASS = 0.00001;
+const MASS = 0.001;
 const  C_VELOCITY= 0.3;
 @compute @workgroup_size(1)
 fn mass_conservation(@builtin(global_invocation_id) inv_id: vec3<u32>) {
