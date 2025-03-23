@@ -1,10 +1,9 @@
 use bindings::{GLOBAL_BIND_LOC, GLOBAL_BIND_SIZE};
 use egui_wgpu::{CallbackTrait, RenderState};
-use std::{num::NonZero, sync::Arc};
+use std::num::NonZero;
 use wgpu::{
   BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-  BindGroupLayoutEntry, Buffer, BufferBinding, BufferDescriptor, BufferUsages,
-  CommandEncoderDescriptor, Device, PipelineLayoutDescriptor, RenderPipeline,
+  BindGroupLayoutEntry, Buffer, BufferBinding, BufferDescriptor, BufferUsages, Device, PipelineLayoutDescriptor, RenderPipeline,
   RenderPipelineDescriptor, ShaderStages, TextureFormat, VertexState,
 };
 

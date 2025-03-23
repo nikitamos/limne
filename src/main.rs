@@ -1,8 +1,7 @@
 #![feature(option_zip)]
-use std::error::Error;
 
 use eframe::{AppCreator, NativeOptions};
-use egui_wgpu::{WgpuConfiguration, WgpuSetup, WgpuSetupCreateNew, WgpuSetupExisting};
+use egui_wgpu::{WgpuConfiguration, WgpuSetup, WgpuSetupExisting};
 use render::application::App;
 use wgpu::*;
 

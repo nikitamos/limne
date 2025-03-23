@@ -1,7 +1,7 @@
 use crate::render::state::*;
 use eframe::CreationContext;
-use egui::{Button, Color32, Grid, Rect, Sense, Vec2};
-use std::{fmt::format, time::Instant};
+use egui::{Button, Color32, Grid, Rect, Sense};
+use std::time::Instant;
 
 pub struct App {
   time: Instant,

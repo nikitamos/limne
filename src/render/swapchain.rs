@@ -1,4 +1,3 @@
-use std::num::NonZero;
 use wgpu::{
   util::{BufferInitDescriptor, DeviceExt},
   BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
