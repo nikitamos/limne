@@ -1,3 +1,4 @@
+#![feature(option_zip)]
 use std::error::Error;
 
 use eframe::{AppCreator, NativeOptions};

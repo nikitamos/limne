@@ -44,11 +44,6 @@ impl<const N: usize> AsBuffer for [f32; N] {
   }
 }
 
-pub(crate) struct PhysicalSize<T> {
-  pub width: T,
-  pub height: T,
-}
-
 pub trait Simulation {
   fn step(&mut self, dt: f32);
   fn encoder_label<'a>(&self) -> Option<&'a str> {
@@ -75,7 +70,7 @@ pub trait Simulation {
     view: &wgpu::TextureView,
   ) -> CommandBuffer;
   fn write_buffers(&self, queue: &wgpu::Queue);
-  fn on_surface_resized(&mut self, size: PhysicalSize<u32>, device: &wgpu::Device);
+  fn on_surface_resized(&mut self, size: egui::Vec2, device: &wgpu::Device);
 }
 
 fn make_vec_buf<T>(v: &Vec<T>) -> &[u8] {
@@ -128,7 +123,7 @@ pub mod two_d {
     pub fn create_fully_initialized(
       count: usize,
       device: &wgpu::Device,
-      size: PhysicalSize<u32>,
+      size: egui::Vec2,
       format: wgpu::TextureFormat,
       global_layout: &wgpu::BindGroupLayout,
     ) -> Self {
@@ -136,11 +131,11 @@ pub mod two_d {
       out.init_pipelines(device, format, global_layout);
       out
     }
-    pub fn new(count: usize, device: &wgpu::Device, size: PhysicalSize<u32>) -> Self {
+    pub fn new(count: usize, device: &wgpu::Device, size: egui::Vec2) -> Self {
       let mut positions: Vec<NumVector3D<f32>> = vec![Default::default(); count];
       let mut rng = rand::rng();
-      let width = size.width as f32;
-      let height = size.height as f32;
+      let width = size.x;
+      let height = size.y;
 
       for p in positions.iter_mut() {
         p.x = rng.sample(rand::distr::Uniform::new(0.0, width).unwrap());
@@ -148,8 +143,8 @@ pub mod two_d {
       }
 
       // Create cells
-      let x_cells = (2 * size.width).div_ceil(CELL_SIZE) as usize;
-      let y_cells = (2 * size.height).div_ceil(CELL_SIZE) as usize;
+      let x_cells = (2 * size.x as u32).div_ceil(CELL_SIZE) as usize;
+      let y_cells = (2 * size.y as u32).div_ceil(CELL_SIZE) as usize;
 
       let mut cells = vec![DefaultCell::default(); x_cells * y_cells];
       const VEL_BOUND: f32 = 70.0;
@@ -444,9 +439,9 @@ pub mod two_d {
       queue.write_buffer(self.celldims_buf.as_ref().unwrap(), 0, &a);
     }
 
-    fn on_surface_resized(&mut self, size: PhysicalSize<u32>, device: &wgpu::Device) {
-      self.width = size.width as f32;
-      self.height = size.height as f32;
+    fn on_surface_resized(&mut self, size: egui::Vec2, device: &wgpu::Device) {
+      self.width = size.x;
+      self.height = size.y;
 
       let x_distr = rand::distr::Uniform::new(0.0, self.width).unwrap();
       let y_distr = rand::distr::Uniform::new(0.0, self.height).unwrap();
@@ -469,8 +464,8 @@ pub mod two_d {
       );
 
       // Create cells
-      let x_cells = (size.width).div_ceil(CELL_SIZE) as usize;
-      let y_cells = (size.height).div_ceil(CELL_SIZE) as usize;
+      let x_cells = (size.x as u32).div_ceil(CELL_SIZE) as usize;
+      let y_cells = (size.y as u32).div_ceil(CELL_SIZE) as usize;
       println!("Cell count: {}", x_cells * y_cells);
 
       let cells = vec![DefaultCell::default(); x_cells * y_cells];

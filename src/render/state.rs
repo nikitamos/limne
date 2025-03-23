@@ -12,12 +12,14 @@ use crate::render::simulation::two_d::DefaultSim;
 
 use super::simulation::{two_d, AsBuffer, Simulation};
 
-pub(super) struct ClearPassState {
+pub(super) struct PersistentState {
   clear_pipeline: RenderPipeline,
   simulation: two_d::DefaultSim,
   global_layout: BindGroupLayout,
   global_bind: BindGroup,
   viewport_buf: Buffer,
+  size: egui::Vec2,
+  format: TextureFormat,
 }
 
 pub mod bindings {
@@ -26,7 +28,7 @@ pub mod bindings {
 }
 
 /// This structure is responsible for storing WGPU resources for the clear pass
-impl ClearPassState {
+impl PersistentState {
   pub fn update(&mut self, dt: f32, total: f32) {
     self.simulation.step(dt);
   }
@@ -36,11 +38,12 @@ impl ClearPassState {
       adapter,
       queue,
       target_format: format,
+      renderer,
       ..
     } = rstate;
 
     println!(
-      "Adapter: {}\n Backend: {}",
+      "Adapter: {}\nBackend: {}",
       adapter.get_info().name,
       adapter.get_info().backend.to_str().to_uppercase()
     );
@@ -84,9 +87,9 @@ impl ClearPassState {
       simulation: DefaultSim::create_fully_initialized(
         65000,
         device,
-        crate::render::simulation::PhysicalSize {
-          width: 1200,
-          height: 800,
+        egui::Vec2 {
+          x: 1200.0,
+          y: 800.0,
         },
         *format,
         &global_layout,
@@ -94,6 +97,8 @@ impl ClearPassState {
       global_bind,
       viewport_buf,
       global_layout,
+      size: egui::Vec2::ZERO,
+      format: *format,
     }
   }
 
@@ -149,46 +154,35 @@ impl ClearPassState {
     pipeline
   }
 
-  // pub fn resize(&mut self, size: PhysicalSize<u32>) {
-  // if size.width > 0 && size.height > 0 {
-  //   self.config.width = size.width;
-  //   self.config.height = size.height;
-  //   self.surface.configure(&self.device, &self.config);
-  //   self.simulation.as_mut().map(|s| {
-  //     s.on_surface_resized(size, &self.device);
-  //     s.reinit_pipelines(&self.device, self.config.format, &self.global_layout);
-  //   });
-  // }
-  // }
+  pub fn resize(&mut self, size: egui::Vec2, device: &wgpu::Device) {
+    if size.x > 0. && size.y > 0. {
+      self.size = size;
+      self.simulation.on_surface_resized(size, device);
+      self
+        .simulation
+        .reinit_pipelines(&device, self.format, &self.global_layout);
+    }
+  }
 
-  // pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-  //   let commands = std::iter::once(encoder.finish());
-  //   let a = self.simulation.as_mut().map(|sim| {
-  //     let sim_encoder = self
-  //       .device
-  //       .create_command_encoder(&CommandEncoderDescriptor {
-  //         label: sim.encoder_label(),
-  //       });
-  //     sim.write_buffers(&self.queue);
-  //     sim.run_passes(sim_encoder, &self.global_bind, &view)
-  //   });
+  /// If `size` is different from stored internally,
+  /// calls [`Self::resize`]
+  pub fn check_resize(&mut self, size: egui::Vec2, device: &wgpu::Device) {
+    if size != self.size {
+      self.resize(size, device);
+    }
+  }
+}
 
-  //   self.queue.submit(commands.chain(a));
-  //   output.present();
-
-  //   Ok(())
-  // }
-
-  // pub fn set_simulation(&mut self, sim: Box<dyn Simulation>) -> Option<Box<dyn Simulation>> {
-  //   let mut sim = sim;
-  //   sim.init_pipelines(&self.device, self.config.format, &self.global_layout);
-  //   self.simulation.replace(sim)
-  // }
+pub struct SimulationRegenOptions {
+  pub vmin: f32,
+  pub vmax: f32,
+  pub cell_size: f32,
 }
 
 pub(crate) struct StateCallback {
   pub dt: f32,
   pub time: f32,
+  // pub grid_regen_opts:
 }
 
 impl CallbackTrait for StateCallback {
@@ -198,7 +192,7 @@ impl CallbackTrait for StateCallback {
     pass: &mut wgpu::RenderPass<'static>,
     callback_resources: &egui_wgpu::CallbackResources,
   ) {
-    let Some(state) = callback_resources.get::<ClearPassState>() else {
+    let Some(state) = callback_resources.get::<PersistentState>() else {
       unreachable!()
     };
     state.simulation.render_into_pass(&state.global_bind, pass);
@@ -206,30 +200,29 @@ impl CallbackTrait for StateCallback {
 
   fn prepare(
     &self,
-    _device: &wgpu::Device,
+    device: &wgpu::Device,
     queue: &wgpu::Queue,
     screen_descriptor: &egui_wgpu::ScreenDescriptor,
     _encoder: &mut wgpu::CommandEncoder,
     callback_resources: &mut egui_wgpu::CallbackResources,
   ) -> Vec<wgpu::CommandBuffer> {
     // UPDATE/COMPUTE goes here?
-    let Some(state) = callback_resources.get::<ClearPassState>() else {
+    let Some(state) = callback_resources.get::<PersistentState>() else {
       unreachable!()
+    };
+    let size = egui::Vec2 {
+      x: screen_descriptor.size_in_pixels[0] as f32,
+      y: screen_descriptor.size_in_pixels[1] as f32,
     };
     queue.write_buffer(
       &state.viewport_buf,
       0,
-      [
-        screen_descriptor.size_in_pixels[0] as f32,
-        screen_descriptor.size_in_pixels[0] as f32,
-        self.time,
-        self.dt,
-      ]
-      .as_bytes_buffer(),
+      [size.x, size.y, self.time, self.dt].as_bytes_buffer(),
     );
-    let Some(state) = callback_resources.get_mut::<ClearPassState>() else {
+    let Some(state) = callback_resources.get_mut::<PersistentState>() else {
       unreachable!()
     };
+    state.check_resize(size, device);
     state.simulation.write_buffers(queue);
     Vec::new()
   }
@@ -241,7 +234,7 @@ impl CallbackTrait for StateCallback {
     egui_encoder: &mut wgpu::CommandEncoder,
     callback_resources: &mut egui_wgpu::CallbackResources,
   ) -> Vec<wgpu::CommandBuffer> {
-    let Some(state) = callback_resources.get_mut::<ClearPassState>() else {
+    let Some(state) = callback_resources.get_mut::<PersistentState>() else {
       unreachable!()
     };
     state.simulation.compute(egui_encoder, &state.global_bind);
