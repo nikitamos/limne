@@ -1,15 +1,63 @@
 use std::error::Error;
-use winit::event_loop::EventLoop;
+
+use eframe::{AppCreator, NativeOptions};
+use egui_wgpu::{WgpuConfiguration, WgpuSetup, WgpuSetupCreateNew, WgpuSetupExisting};
+use render::application::App;
+use wgpu::*;
 
 mod math;
 mod render;
 
-fn main() -> Result<(), Box<dyn Error>> {
-  let event_loop = EventLoop::builder().build()?;
-  event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
-  let mut app = render::application::App::new();
-  event_loop
-    .run_app(&mut app)
-    .expect("Error running event loop");
-  Ok(())
+async fn create_wgpu_setup() -> WgpuSetup {
+  let instance = wgpu::Instance::new(&InstanceDescriptor {
+    backends: Backends::all(),
+    ..Default::default()
+  });
+
+  let adapter = instance
+    .request_adapter(&RequestAdapterOptions {
+      compatible_surface: None,
+      power_preference: wgpu::PowerPreference::HighPerformance,
+      force_fallback_adapter: false,
+    })
+    .await
+    .expect("Unable to create an adapter");
+
+  let (device, queue) = adapter
+    .request_device(
+      &DeviceDescriptor {
+        required_features: Features::VERTEX_WRITABLE_STORAGE,
+        ..Default::default()
+      },
+      None,
+    )
+    .await
+    .expect("unable to create a device");
+
+  WgpuSetup::Existing(WgpuSetupExisting {
+    instance,
+    adapter,
+    device,
+    queue,
+  })
+}
+
+fn сотворить_создателя_приложенія<'a>() -> AppCreator<'a> {
+  Box::new(|cc| Ok(Box::new(App::new(cc))))
+}
+
+#[tokio::main]
+async fn main() -> Result<(), eframe::Error> {
+  let opts = NativeOptions {
+    hardware_acceleration: eframe::HardwareAcceleration::Required,
+    renderer: eframe::Renderer::Wgpu,
+    run_and_return: false,
+    centered: true,
+    wgpu_options: WgpuConfiguration {
+      wgpu_setup: create_wgpu_setup().await,
+      ..Default::default()
+    },
+    ..Default::default()
+  };
+  eframe::run_native("org.m0sni.krusach2", opts, сотворить_создателя_приложенія())
 }

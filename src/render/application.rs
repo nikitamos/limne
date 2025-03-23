@@ -1,107 +1,47 @@
 use crate::render::state::*;
-use std::{sync::Arc, time::Instant};
-use tokio::runtime::Runtime;
+use eframe::CreationContext;
+use egui::{Sense, Vec2};
+use std::time::Instant;
 
-use winit::{
-  application::ApplicationHandler,
-  event::{KeyEvent, WindowEvent::*},
-  keyboard::{Key, NamedKey},
-  window::{Window, WindowAttributes},
-};
-
-use super::simulation::two_d;
-
-pub struct App<'a> {
-  runtime: Runtime,
-  window: Option<Arc<Window>>,
-  state: Option<State<'a>>,
+pub struct App {
   time: Instant,
   startup_time: Instant,
 }
 
-impl<'a> ApplicationHandler for App<'a> {
-  fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-    if self.window.is_none() {
-      self.window.replace(Arc::new(
-        event_loop
-          .create_window(WindowAttributes::default())
-          .expect("Error creating a window"),
-      ));
-      let size = self.window().inner_size();
-      self
-        .state
-        .replace(self.runtime.block_on(State::create(self.window())));
-      self
-        .map_state(|s| s.set_simulation(Box::new(two_d::DefaultSim::new(60000, &s.device, size))));
-    }
-  }
-
-  fn window_event(
-    &mut self,
-    event_loop: &winit::event_loop::ActiveEventLoop,
-    _win_id: winit::window::WindowId,
-    event: winit::event::WindowEvent,
-  ) {
-    match event {
-      KeyboardInput {
-        event:
-          KeyEvent {
-            logical_key: Key::Named(NamedKey::Escape),
-            state,
-            ..
+impl eframe::App for App {
+  fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    let time = Instant::now();
+    let dt = time - self.time;
+    // self.state.update(dt.as_secs_f32(), (time - self.startup_time).as_secs_f32());
+    self.time = time;
+    egui::CentralPanel::default().show(ctx, |ui| {
+      ui.heading("Hello World!");
+      egui::Frame::canvas(ui.style()).show(ui, |ui| {
+        let (rect, _) = ui.allocate_at_least(Vec2::new(800., 1200.), Sense::empty());
+        ui.painter().add(egui_wgpu::Callback::new_paint_callback(
+          rect,
+          StateCallback {
+            dt: dt.as_secs_f32(),
+            time: (time - self.startup_time).as_secs_f32(),
           },
-        ..
-      } if state.is_pressed() => println!("ESC pressed"),
-      RedrawRequested => {
-        self.window().request_redraw();
-        let now = Instant::now();
-        let dt = (now - self.time).as_secs_f32();
-        let total = (now - self.startup_time).as_secs_f32();
-
-        match self.map_state(|s| {
-          s.update(dt, total);
-          s.render()
-        }) {
-          Ok(()) => (),
-          Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-            let size = self.window().inner_size();
-            let s = self.state.as_mut().unwrap();
-            s.resize(size);
-          }
-          Err(wgpu::SurfaceError::Timeout) => (),
-          _ => event_loop.exit(),
-        }
-        self.time = Instant::now()
-      }
-      CloseRequested => {
-        self.state = None;
-        self.window = None;
-        event_loop.exit();
-      }
-      Resized(size) => self.map_state(|s| s.resize(size)),
-      _ => {}
-    }
+        ))
+      });
+    });
   }
 }
 
-impl App<'_> {
-  pub fn new() -> Self {
+impl App {
+  pub fn new(cc: &CreationContext<'_>) -> Self {
+    let wgpu_render_state = cc.wgpu_render_state.as_ref().unwrap();
+    let state = ClearPassState::create(wgpu_render_state);
+    wgpu_render_state
+      .renderer
+      .write()
+      .callback_resources
+      .insert(state);
     Self {
-      runtime: tokio::runtime::Builder::new_multi_thread().build().unwrap(),
-      window: None,
-      state: None,
       time: Instant::now(),
       startup_time: Instant::now(),
     }
-  }
-  fn window(&self) -> Arc<Window> {
-    if let Some(ref w) = self.window {
-      Arc::clone(w)
-    } else {
-      panic!("")
-    }
-  }
-  fn map_state<T>(&mut self, f: impl FnOnce(&mut State) -> T) -> T {
-    self.state.as_mut().map(f).unwrap()
   }
 }

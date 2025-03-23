@@ -1,11 +1,9 @@
 use core::slice;
 use std::ops::{Deref, DerefMut};
 
-use two_d::DefaultCell;
-use wgpu::{util::DeviceExt, CommandBuffer, CommandEncoder, VertexBufferLayout};
-use winit::dpi::PhysicalSize;
-
 use crate::math::vector::NumVector3D;
+use two_d::DefaultCell;
+use wgpu::{CommandBuffer, CommandEncoder, VertexBufferLayout};
 
 pub trait AsBuffer {
   fn as_bytes_buffer(&self) -> &[u8];
@@ -44,6 +42,11 @@ impl<const N: usize> AsBuffer for [f32; N] {
   fn as_bytes_buffer(&self) -> &[u8] {
     unsafe { slice::from_raw_parts(self.as_ptr().cast(), N * std::mem::size_of::<f32>()) }
   }
+}
+
+pub(crate) struct PhysicalSize<T> {
+  pub width: T,
+  pub height: T,
 }
 
 pub trait Simulation {
@@ -93,7 +96,6 @@ pub mod two_d {
     vertex_attr_array, MultisampleState, RenderPassColorAttachment, RenderPipelineDescriptor,
     ShaderStages,
   };
-  use winit::dpi::PhysicalSize;
 
   use crate::render::swapchain::{SwapBuffers, SwapBuffersDescriptor};
 
@@ -123,6 +125,17 @@ pub mod two_d {
 
   const CELL_SIZE: u32 = 7;
   impl DefaultSim {
+    pub fn create_fully_initialized(
+      count: usize,
+      device: &wgpu::Device,
+      size: PhysicalSize<u32>,
+      format: wgpu::TextureFormat,
+      global_layout: &wgpu::BindGroupLayout,
+    ) -> Self {
+      let mut out = Self::new(count, device, size);
+      out.init_pipelines(device, format, global_layout);
+      out
+    }
     pub fn new(count: usize, device: &wgpu::Device, size: PhysicalSize<u32>) -> Self {
       let mut positions: Vec<NumVector3D<f32>> = vec![Default::default(); count];
       let mut rng = rand::rng();
@@ -158,7 +171,7 @@ pub mod two_d {
         }
       }
 
-      let mut out = Self {
+      let out = Self {
         positions: SwapBuffers::init_with(
           positions.into(),
           &device,
@@ -218,6 +231,41 @@ pub mod two_d {
     fn cell_index(&self, x: usize, y: usize) -> usize {
       y * self.x_cells + x
     }
+    pub fn render_into_pass(
+      &self,
+      global_bind_group: &wgpu::BindGroup,
+      pass: &mut wgpu::RenderPass<'_>,
+    ) {
+      pass.set_pipeline(self.pipeline.as_ref().unwrap());
+      pass.set_vertex_buffer(0, self.positions.cur_buf().slice(..));
+      pass.set_bind_group(0, global_bind_group, &[]);
+      pass.set_bind_group(1, &self.grid_bg, &[]);
+      pass.set_bind_group(2, self.cells.cur_group(), &[]);
+      pass.draw(0..3, 0..(self.positions.cur().len() as u32));
+    }
+
+    pub fn compute(&mut self, encoder: &mut CommandEncoder, global_bind_group: &wgpu::BindGroup) {
+      self.positions.swap(encoder);
+      self.cells.swap(encoder);
+      let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some("DefSim COMPUTE pass"),
+        timestamp_writes: None,
+      });
+      pass.set_pipeline(self.move_pipeline.as_ref().unwrap());
+      pass.set_bind_group(0, global_bind_group, &[]);
+      pass.set_bind_group(1, self.grid_bg.as_ref().unwrap(), &[]);
+      pass.set_bind_group(2, self.positions.cur_group(), &[]);
+      pass.set_bind_group(3, self.cells.cur_group(), &[]);
+      // let mut x: u32 = self.positions.cur().len() as u32;
+      // let mut y: u32 = 1;
+      // if self.positions.cur().len() >= (u16::MAX as usize) {
+      //   y = x.div_ceil(u16::MAX as u32);
+      //   x /= u16::MAX as u32;
+      // }
+      pass.dispatch_workgroups(self.positions.cur().len() as u32, 1, 1);
+      pass.set_pipeline(self.mass_consv_pipeline.as_ref().unwrap());
+      pass.dispatch_workgroups(self.x_cells as u32, self.y_cells as u32, 1);
+    }
   }
 
   const DEFSIM_BUFFER_LAYOUT: VertexBufferLayout = VertexBufferLayout {
@@ -235,28 +283,7 @@ pub mod two_d {
       global_bind_group: &wgpu::BindGroup,
       view: &wgpu::TextureView,
     ) -> wgpu::CommandBuffer {
-      self.positions.swap(&mut encoder);
-      self.cells.swap(&mut encoder);
-      {
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-          label: Some("DefSim COMPUTE pass"),
-          timestamp_writes: None,
-        });
-        pass.set_pipeline(self.move_pipeline.as_ref().unwrap());
-        pass.set_bind_group(0, global_bind_group, &[]);
-        pass.set_bind_group(1, self.grid_bg.as_ref().unwrap(), &[]);
-        pass.set_bind_group(2, self.positions.cur_group(), &[]);
-        pass.set_bind_group(3, self.cells.cur_group(), &[]);
-        let mut x: u32 = self.positions.cur().len() as u32;
-        let mut y: u32 = 1;
-        if self.positions.cur().len() >= (u16::MAX as usize) {
-          y = x.div_ceil(u16::MAX as u32);
-          x /= u16::MAX as u32;
-        }
-        pass.dispatch_workgroups(x, y, 1);
-        pass.set_pipeline(self.mass_consv_pipeline.as_ref().unwrap());
-        pass.dispatch_workgroups(self.x_cells as u32, self.y_cells as u32, 1);
-      }
+      self.compute(&mut encoder, global_bind_group);
 
       {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -274,11 +301,7 @@ pub mod two_d {
           occlusion_query_set: None,
         });
         pass.set_pipeline(self.pipeline.as_ref().unwrap());
-        pass.set_vertex_buffer(0, self.positions.cur_buf().slice(..));
-        pass.set_bind_group(0, global_bind_group, &[]);
-        pass.set_bind_group(1, &self.grid_bg, &[]);
-        pass.set_bind_group(2, self.cells.cur_group(), &[]);
-        pass.draw(0..3, 0..(self.positions.cur().len() as u32));
+        self.render_into_pass(global_bind_group, &mut pass);
       }
       encoder.finish()
     }
@@ -292,25 +315,27 @@ pub mod two_d {
       // CELL BINDING GROUP (for DRAWING & COMPUTE)
       let grid_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("Cell grid binding layout"),
-        entries: &[
-          wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::all(),
-            ty: wgpu::BindingType::Buffer {
-              ty: wgpu::BufferBindingType::Storage { read_only: false },
-              has_dynamic_offset: false,
-              min_binding_size: None,
-            },
-            count: None,
+        entries: &[wgpu::BindGroupLayoutEntry {
+          binding: 0,
+          visibility: wgpu::ShaderStages::all(),
+          ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Storage { read_only: false },
+            has_dynamic_offset: false,
+            min_binding_size: None,
           },
-        ],
+          count: None,
+        }],
       });
 
-      
       // COMPUTE PIPELINES
       let compute_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("DefSim COMPUTE pipeline layout"),
-        bind_group_layouts: &[global_layout, &grid_bg_layout, &self.positions.cur_layout(), self.cells.cur_layout()],
+        bind_group_layouts: &[
+          global_layout,
+          &grid_bg_layout,
+          &self.positions.cur_layout(),
+          self.cells.cur_layout(),
+        ],
         push_constant_ranges: &[],
       });
 
@@ -328,7 +353,7 @@ pub mod two_d {
       let compute_pipeline = device.create_compute_pipeline(&compute_desc);
       compute_desc.entry_point = Some("mass_conservation");
       let mass_consv_pipeline = device.create_compute_pipeline(&compute_desc);
-      
+
       // PARTICLE DRAWING (geometry)
 
       // DRAWING layout
@@ -387,16 +412,14 @@ pub mod two_d {
       let grid_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("Cell bind group"),
         layout: &grid_bg_layout,
-        entries: &[
-          wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-              buffer: &celldims_buf,
-              offset: 0,
-              size: None,
-            }),
-          },
-        ],
+        entries: &[wgpu::BindGroupEntry {
+          binding: 0,
+          resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+            buffer: &celldims_buf,
+            offset: 0,
+            size: None,
+          }),
+        }],
       });
 
       self.pipeline = Some(pipeline);
@@ -427,15 +450,23 @@ pub mod two_d {
 
       let x_distr = rand::distr::Uniform::new(0.0, self.width).unwrap();
       let y_distr = rand::distr::Uniform::new(0.0, self.height).unwrap();
-      self.positions.reset(self.positions
-        .cur().0
-        .clone().into_iter().map(|mut p| {
-        let mut rng = rand::rng();
-        p.x = rng.sample(x_distr);
-        p.y = rng.sample(y_distr);
-        p
-      }).collect::<Vec<_>>().into(), device);
-
+      self.positions.reset(
+        self
+          .positions
+          .cur()
+          .0
+          .clone()
+          .into_iter()
+          .map(|mut p| {
+            let mut rng = rand::rng();
+            p.x = rng.sample(x_distr);
+            p.y = rng.sample(y_distr);
+            p
+          })
+          .collect::<Vec<_>>()
+          .into(),
+        device,
+      );
 
       // Create cells
       let x_cells = (size.width).div_ceil(CELL_SIZE) as usize;

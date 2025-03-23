@@ -4,12 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-eframe = "0.31.1"
+eframe = {version = "0.31.1", features = ["wayland", "x11", "wgpu", "default_fonts"], default-features = false}
 egui = "0.31.1"
-egui-wgpu = { version = "0.31.1", features = ["winit", "wayland", "x11"] }
+egui-wgpu = { version = "0.31.1", features = ["wayland", "x11"] }
 env_logger = "0.11.7"
 rand = "0.9.0"
 rayon = "1.10.0"
 tokio = { version = "1.44.1", features = ["rt", "macros", "rt-multi-thread"] }
 wgpu = "24.0.1"
-winit = "0.30.9"

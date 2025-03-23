@@ -14,7 +14,7 @@ pub struct SwapBuffers<T> {
   group: [BindGroup; 2],
   cur: usize,
   layout: BindGroupLayout,
-  desc: SwapBuffersDescriptor
+  desc: SwapBuffersDescriptor,
 }
 
 pub struct SwapBuffersDescriptor {
