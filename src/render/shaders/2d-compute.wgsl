@@ -63,6 +63,10 @@ fn get_idx(x: u32, y: u32) -> u32 {
   return x + y * grid.w;
 }
 
+fn old_cell_at(x: u32, y: u32) -> Cell {
+  return old_cells[get_idx(x, y)];
+}
+
 struct Vec3 {
   x: f32,
   y: f32,
@@ -78,16 +82,16 @@ fn apply_velocities(@builtin(global_invocation_id) inv_id: vec3<u32>) {
   positions[i].x += g.dt * c.vx;
   positions[i].y += g.dt * c.vy;
 
-  // THREAD-UNSAFE!!!
-  let new_idx = cell_idx(vec2(positions[i].x, positions[i].y));
-  if (new_idx != old_idx) {
-    cur_cells[new_idx].density += 1.0;
-    cur_cells[old_idx].density -= 1.0;
-  }
+  // **Do not update densities to solve Navier-Stokes as specified in an article**
+  // !!! THREAD-UNSAFE!!!
+  // let new_idx = cell_idx(vec2(positions[i].x, positions[i].y));
+  // if (new_idx != old_idx) {
+  //   cur_cells[new_idx].density += 1.0;
+  //   cur_cells[old_idx].density -= 1.0;
+  // }
 }
 
 const MASS = 0.001;
-const  C_VELOCITY= 0.3;
 @compute @workgroup_size(1)
 fn mass_conservation(@builtin(global_invocation_id) inv_id: vec3<u32>) {
   let index = get_idx(inv_id.x, inv_id.y);
@@ -102,23 +106,35 @@ fn mass_conservation(@builtin(global_invocation_id) inv_id: vec3<u32>) {
     }
   }
 
-  let drho = (cur_cells[index].density - old_cells[index].density) * (MASS / g.dt);
+  // let drho = (cur_cells[index].density - old_cells[index].density) * (MASS / g.dt);
   let h = grid.cell_side;
-  // cur_cells[index].vx = 0.5 *(  old_cells[get_idx(inv_id.x + 1, inv_id.y)].vx
-  //                             + old_cells[get_idx(inv_id.x, inv_id.y + 1)].vx
-  //                             - h * drho);
-  // cur_cells[index].vy = 0.5 *(  old_cells[get_idx(inv_id.x + 1, inv_id.y)].vy
-  //                             + old_cells[get_idx(inv_id.x, inv_id.y + 1)].vy
-  //                             - h * drho);
-  cur_cells[index].vx = h*drho + old_cells[get_idx(inv_id.x + 1, inv_id.y)].vx
-                               + old_cells[get_idx(inv_id.x, inv_id.y + 1)].vy
-                               - old_cells[index].vx;
-  cur_cells[index].vy = h*drho + old_cells[get_idx(inv_id.x + 1, inv_id.y)].vx
-                               + old_cells[get_idx(inv_id.x, inv_id.y + 1)].vy
-                               - old_cells[index].vy;
-  cur_cells[index].vx *= C_VELOCITY;
-  cur_cells[index].vy *= C_VELOCITY;
-}
-@compute @workgroup_size(1)
-fn navier_stokes() {
+  let cur_cell = cur_cells[index];
+  let old_cell = old_cells[index];
+  
+  let top = old_cell_at(inv_id.x, inv_id.y+1);
+  let bottom = old_cell_at(inv_id.x, inv_id.y-1);
+  let left = old_cell_at(inv_id.x-1, inv_id.y);
+  let right = old_cell_at(inv_id.x+1, inv_id.y);
+
+  let u = vec2(cur_cell.vx, cur_cell.vy);
+  let u_top = vec2(top.vx, top.vy);
+  let u_left = vec2(left.vx, left.vy);
+  let u_right = vec2(right.vx, right.vy);
+  let u_bottom = vec2(bottom.vx, bottom.vy);
+
+  let du_dx = (u_right - u_left) / h;
+  let du_dy = (u_top - u_bottom) / h;
+  let div_u = du_dx.x + du_dy.y;
+
+  let grad_rho =
+       vec2(right.density - left.density,
+            top.density - bottom.density) / h;
+  let rho = old_cell.density - g.dt * (dot(grad_rho, u) + old_cell.density*div_u);
+  // CLAMP DENSITY
+
+  let K = 0.3;
+  let S = K / g.dt;
+  let laplacian = mat4x2f(u_right, u_left, u_top, u_bottom) * vec4f(1.0);
+
+  cur_cells[index].density = rho;
 }

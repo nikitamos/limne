@@ -219,27 +219,7 @@ pub mod two_d {
 
       out
     }
-    fn get_cell(&self, pos: NumVector3D<f32>) -> (DefaultCell, (usize, usize)) {
-      let idx = (
-        ((pos.x / self.opts.size) as usize).clamp(0, self.x_cells - 1),
-        ((pos.y / self.opts.size) as usize).clamp(0, self.y_cells - 1),
-      );
-      (
-        self
-          .cells
-          .cur()
-          .get(idx.1 * self.x_cells + idx.0)
-          .unwrap()
-          .clone(),
-        idx,
-      )
-    }
-    fn cell_by_index(&self, x: usize, y: usize) -> DefaultCell {
-      self.cells.cur()[self.cell_index(x, y)].clone()
-    }
-    fn cell_index(&self, x: usize, y: usize) -> usize {
-      y * self.x_cells + x
-    }
+
     pub fn render_into_pass(
       &self,
       global_bind_group: &wgpu::BindGroup,
@@ -265,12 +245,6 @@ pub mod two_d {
       pass.set_bind_group(1, self.grid_bg.as_ref().unwrap(), &[]);
       pass.set_bind_group(2, self.positions.cur_group(), &[]);
       pass.set_bind_group(3, self.cells.cur_group(), &[]);
-      // let mut x: u32 = self.positions.cur().len() as u32;
-      // let mut y: u32 = 1;
-      // if self.positions.cur().len() >= (u16::MAX as usize) {
-      //   y = x.div_ceil(u16::MAX as u32);
-      //   x /= u16::MAX as u32;
-      // }
       pass.dispatch_workgroups(self.positions.cur().len() as u32, 1, 1);
       pass.set_pipeline(self.mass_consv_pipeline.as_ref().unwrap());
       pass.dispatch_workgroups(self.x_cells as u32, self.y_cells as u32, 1);
