@@ -1,4 +1,5 @@
 #![feature(option_zip)]
+#![feature(duration_millis_float)]
 
 use eframe::{AppCreator, NativeOptions};
 use egui_wgpu::{WgpuConfiguration, WgpuSetup, WgpuSetupExisting};

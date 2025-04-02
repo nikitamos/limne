@@ -13,10 +13,11 @@ struct Cell {
 };
 
 struct Grid {
-  // grid: vec2<u32>,
   w: u32,
   h: u32,
-  cell_side: f32
+  cell_side: f32,
+  vmin: f32,
+  vmax: f32
 };
 
 // Grid (dimensions, cell sides)

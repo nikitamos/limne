@@ -44,6 +44,13 @@ impl<const N: usize> AsBuffer for [f32; N] {
   }
 }
 
+#[derive(Clone, Copy)]
+pub struct SimulationRegenOptions {
+  pub size: f32,
+  pub vmin: f32,
+  pub vmax: f32,
+}
+
 pub trait Simulation {
   fn step(&mut self, dt: f32);
   fn encoder_label<'a>(&self) -> Option<&'a str> {
@@ -110,15 +117,15 @@ pub mod two_d {
     move_pipeline: Option<wgpu::ComputePipeline>,
     mass_consv_pipeline: Option<wgpu::ComputePipeline>,
     pipeline: Option<wgpu::RenderPipeline>,
-    celldims_buf: Option<wgpu::Buffer>,
+    grid_buf: Option<wgpu::Buffer>,
     grid_bg: Option<wgpu::BindGroup>,
     x_cells: usize,
     y_cells: usize,
     height: f32,
     width: f32,
+    opts: SimulationRegenOptions,
   }
 
-  const CELL_SIZE: u32 = 7;
   impl DefaultSim {
     pub fn create_fully_initialized(
       count: usize,
@@ -126,12 +133,18 @@ pub mod two_d {
       size: egui::Vec2,
       format: wgpu::TextureFormat,
       global_layout: &wgpu::BindGroupLayout,
+      opts: SimulationRegenOptions,
     ) -> Self {
-      let mut out = Self::new(count, device, size);
+      let mut out = Self::new(count, device, size, opts);
       out.init_pipelines(device, format, global_layout);
       out
     }
-    pub fn new(count: usize, device: &wgpu::Device, size: egui::Vec2) -> Self {
+    pub fn new(
+      count: usize,
+      device: &wgpu::Device,
+      size: egui::Vec2,
+      opts: SimulationRegenOptions,
+    ) -> Self {
       let mut positions: Vec<NumVector3D<f32>> = vec![Default::default(); count];
       let mut rng = rand::rng();
       let width = size.x;
@@ -143,8 +156,8 @@ pub mod two_d {
       }
 
       // Create cells
-      let x_cells = (2 * size.x as u32).div_ceil(CELL_SIZE) as usize;
-      let y_cells = (2 * size.y as u32).div_ceil(CELL_SIZE) as usize;
+      let x_cells = (2 * size.x as u32).div_ceil(opts.size as u32) as usize;
+      let y_cells = (2 * size.y as u32).div_ceil(opts.size as u32) as usize;
 
       let mut cells = vec![DefaultCell::default(); x_cells * y_cells];
       const VEL_BOUND: f32 = 70.0;
@@ -184,7 +197,7 @@ pub mod two_d {
         move_pipeline: None,
         mass_consv_pipeline: None,
         grid_bg: None,
-        celldims_buf: None,
+        grid_buf: None,
         x_cells,
         y_cells,
         cells: SwapBuffers::init_with(
@@ -201,14 +214,15 @@ pub mod two_d {
         ),
         height,
         width,
+        opts,
       };
 
       out
     }
     fn get_cell(&self, pos: NumVector3D<f32>) -> (DefaultCell, (usize, usize)) {
       let idx = (
-        ((pos.x / (CELL_SIZE as f32)) as usize).clamp(0, self.x_cells - 1),
-        ((pos.y / (CELL_SIZE as f32)) as usize).clamp(0, self.y_cells - 1),
+        ((pos.x / self.opts.size) as usize).clamp(0, self.x_cells - 1),
+        ((pos.y / self.opts.size) as usize).clamp(0, self.y_cells - 1),
       );
       (
         self
@@ -260,6 +274,57 @@ pub mod two_d {
       pass.dispatch_workgroups(self.positions.cur().len() as u32, 1, 1);
       pass.set_pipeline(self.mass_consv_pipeline.as_ref().unwrap());
       pass.dispatch_workgroups(self.x_cells as u32, self.y_cells as u32, 1);
+    }
+
+    pub fn regenerate_grid(&mut self, device: &wgpu::Device, opts: SimulationRegenOptions) {
+      self.opts = opts;
+      let x_cells = (self.width as u32).div_ceil(opts.size as u32) as usize;
+      let y_cells = (self.height as u32).div_ceil(opts.size as u32) as usize;
+      println!("Cell count: {}", x_cells * y_cells);
+
+      let cells = vec![DefaultCell::default(); x_cells * y_cells];
+      let direction = rand::distr::Uniform::new(0.0f32, f32::consts::TAU).unwrap();
+      let vel_distr = rand::distr::Uniform::new(opts.vmin, opts.vmax).unwrap();
+
+      self.cells.reset(
+        cells
+          .into_par_iter()
+          .map(|mut c| {
+            let mut rng = rand::rng();
+            let v = rng.sample(vel_distr);
+            let angle = rng.sample(direction);
+            c.velocity.x = angle.cos() * v;
+            c.velocity.y = angle.sin() * v;
+            c
+          })
+          .collect(),
+        device,
+      );
+
+      self.x_cells = x_cells;
+      self.y_cells = y_cells;
+    }
+
+    pub fn regenerate_positions(&mut self, device: &wgpu::Device) {
+      let x_distr = rand::distr::Uniform::new(0.0, self.width).unwrap();
+      let y_distr = rand::distr::Uniform::new(0.0, self.height).unwrap();
+      self.positions.reset(
+        self
+          .positions
+          .cur()
+          .0
+          .clone()
+          .into_iter()
+          .map(|mut p| {
+            let mut rng = rand::rng();
+            p.x = rng.sample(x_distr);
+            p.y = rng.sample(y_distr);
+            p
+          })
+          .collect::<Vec<_>>()
+          .into(),
+        device,
+      );
     }
   }
 
@@ -398,9 +463,10 @@ pub mod two_d {
         cache: None,
       });
 
-      let celldims_buf = device.create_buffer(&wgpu::BufferDescriptor {
+      let grid_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Cell dimension buffer"),
-        size: 2 * std::mem::size_of::<u32>() as u64 + std::mem::size_of::<f32>() as u64,
+        // u32<WIDTH> | u32<HEIGHT> | f32<SIDE> | f32<VMIN> | f32<VMAX>
+        size: 2 * std::mem::size_of::<u32>() as u64 +  3 * std::mem::size_of::<f32>() as u64,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
         mapped_at_creation: false,
       });
@@ -410,7 +476,7 @@ pub mod two_d {
         entries: &[wgpu::BindGroupEntry {
           binding: 0,
           resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-            buffer: &celldims_buf,
+            buffer: &grid_buf,
             offset: 0,
             size: None,
           }),
@@ -421,74 +487,29 @@ pub mod two_d {
       self.move_pipeline = Some(compute_pipeline);
       self.mass_consv_pipeline = Some(mass_consv_pipeline);
 
-      self.celldims_buf = Some(celldims_buf);
+      self.grid_buf = Some(grid_buf);
       self.grid_bg = Some(grid_bg);
     }
 
     fn write_buffers(&self, queue: &wgpu::Queue) {
       let celldims = (self.x_cells as u32, self.y_cells as u32);
-      // TODO: make sane implementation
-      let a: Vec<_> = celldims
-        .0
-        .to_ne_bytes()
+      let a: Vec<_> = [celldims.0, celldims.1]
         .into_iter()
-        .chain(celldims.1.to_ne_bytes().into_iter())
-        .chain((CELL_SIZE as f32).to_ne_bytes().into_iter())
+        .map(|x| x.to_ne_bytes())
+        .flatten()
+        .chain(self.opts.size.to_ne_bytes().into_iter())
+        .chain(self.opts.vmin.to_ne_bytes())
+        .chain(self.opts.vmax.to_ne_bytes())
         .collect();
 
-      queue.write_buffer(self.celldims_buf.as_ref().unwrap(), 0, &a);
+      queue.write_buffer(self.grid_buf.as_ref().unwrap(), 0, &a);
     }
 
     fn on_surface_resized(&mut self, size: egui::Vec2, device: &wgpu::Device) {
       self.width = size.x;
       self.height = size.y;
-
-      let x_distr = rand::distr::Uniform::new(0.0, self.width).unwrap();
-      let y_distr = rand::distr::Uniform::new(0.0, self.height).unwrap();
-      self.positions.reset(
-        self
-          .positions
-          .cur()
-          .0
-          .clone()
-          .into_iter()
-          .map(|mut p| {
-            let mut rng = rand::rng();
-            p.x = rng.sample(x_distr);
-            p.y = rng.sample(y_distr);
-            p
-          })
-          .collect::<Vec<_>>()
-          .into(),
-        device,
-      );
-
-      // Create cells
-      let x_cells = (size.x as u32).div_ceil(CELL_SIZE) as usize;
-      let y_cells = (size.y as u32).div_ceil(CELL_SIZE) as usize;
-      println!("Cell count: {}", x_cells * y_cells);
-
-      let cells = vec![DefaultCell::default(); x_cells * y_cells];
-      let direction = rand::distr::Uniform::new(0.0f32, f32::consts::TAU).unwrap();
-      let vel_distr = rand::distr::Uniform::new(1400.0, 1500.0).unwrap();
-
-      self.cells.reset(
-        cells
-          .into_par_iter()
-          .map(|mut c| {
-            let mut rng = rand::rng();
-            let v = rng.sample(vel_distr);
-            let angle = rng.sample(direction);
-            c.velocity.x = angle.cos() * v;
-            c.velocity.y = angle.sin() * v;
-            c
-          })
-          .collect(),
-        device,
-      );
-
-      self.x_cells = x_cells;
-      self.y_cells = y_cells;
+      self.regenerate_positions(device);
+      self.regenerate_grid(device, self.opts);
     }
   }
 }

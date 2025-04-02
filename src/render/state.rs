@@ -3,13 +3,14 @@ use egui_wgpu::{CallbackTrait, RenderState};
 use std::num::NonZero;
 use wgpu::{
   BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-  BindGroupLayoutEntry, Buffer, BufferBinding, BufferDescriptor, BufferUsages, Device, PipelineLayoutDescriptor, RenderPipeline,
-  RenderPipelineDescriptor, ShaderStages, TextureFormat, VertexState,
+  BindGroupLayoutEntry, Buffer, BufferBinding, BufferDescriptor, BufferUsages, Device,
+  PipelineLayoutDescriptor, RenderPipeline, RenderPipelineDescriptor, ShaderStages, TextureFormat,
+  VertexState,
 };
 
 use crate::render::simulation::two_d::DefaultSim;
 
-use super::simulation::{two_d, AsBuffer, Simulation};
+use super::simulation::{two_d, AsBuffer, Simulation, SimulationRegenOptions};
 
 pub(super) struct PersistentState {
   clear_pipeline: RenderPipeline,
@@ -35,9 +36,7 @@ impl PersistentState {
     let RenderState {
       device,
       adapter,
-      queue,
       target_format: format,
-      renderer,
       ..
     } = rstate;
 
@@ -92,12 +91,13 @@ impl PersistentState {
         },
         *format,
         &global_layout,
+        SimulationRegenOptions{size: 7., vmin: 200.0, vmax: 1500.0}
       ),
       global_bind,
       viewport_buf,
       global_layout,
       size: egui::Vec2::ZERO,
-      format: *format,
+      format: *format, 
     }
   }
 
@@ -172,16 +172,11 @@ impl PersistentState {
   }
 }
 
-pub struct SimulationRegenOptions {
-  pub vmin: f32,
-  pub vmax: f32,
-  pub cell_size: f32,
-}
-
 pub(crate) struct StateCallback {
   pub dt: f32,
   pub time: f32,
-  // pub grid_regen_opts:
+  pub regen_opts: Option<SimulationRegenOptions>,
+  pub regen_pos: bool,
 }
 
 impl CallbackTrait for StateCallback {
@@ -222,6 +217,12 @@ impl CallbackTrait for StateCallback {
       unreachable!()
     };
     state.check_resize(size, device);
+    if let Some(opts) = self.regen_opts {
+      state.simulation.regenerate_grid(device, opts);
+    }
+    if self.regen_pos {
+      state.simulation.regenerate_positions(device);
+    }
     state.simulation.write_buffers(queue);
     Vec::new()
   }
