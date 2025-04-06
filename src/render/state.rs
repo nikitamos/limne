@@ -10,7 +10,7 @@ use wgpu::{
 
 use crate::render::simulation::two_d::DefaultSim;
 
-use super::simulation::{two_d, AsBuffer, Simulation, SimulationRegenOptions};
+use super::simulation::{two_d, AsBuffer, Simulation, SimulationParams, SimulationRegenOptions};
 
 pub(super) struct PersistentState {
   clear_pipeline: RenderPipeline,
@@ -83,7 +83,7 @@ impl PersistentState {
     Self {
       clear_pipeline,
       simulation: DefaultSim::create_fully_initialized(
-        65000,
+        32000,
         device,
         egui::Vec2 {
           x: 1200.0,
@@ -91,7 +91,7 @@ impl PersistentState {
         },
         *format,
         &global_layout,
-        SimulationRegenOptions{size: 7., vmin: 200.0, vmax: 1500.0}
+        SimulationRegenOptions{size: 1., vmin: 10.0, vmax: 500.0}
       ),
       global_bind,
       viewport_buf,
@@ -177,6 +177,7 @@ pub(crate) struct StateCallback {
   pub time: f32,
   pub regen_opts: Option<SimulationRegenOptions>,
   pub regen_pos: bool,
+  pub params: SimulationParams,
 }
 
 impl CallbackTrait for StateCallback {
@@ -216,6 +217,7 @@ impl CallbackTrait for StateCallback {
     let Some(state) = callback_resources.get_mut::<PersistentState>() else {
       unreachable!()
     };
+    state.simulation.set_params(self.params);
     state.check_resize(size, device);
     if let Some(opts) = self.regen_opts {
       state.simulation.regenerate_grid(device, opts);

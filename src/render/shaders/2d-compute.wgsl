@@ -20,6 +20,11 @@ struct Grid {
   vmax: f32
 };
 
+struct OtherParams {
+  K: f32,
+  m0: f32,
+};
+
 // Grid (dimensions, cell sides)
 @group(1) @binding(0)
 var<storage, read_write> grid: Grid;
@@ -39,6 +44,9 @@ var<storage, read_write> old_positions: array<Vec3>;
 var<storage, read_write> cur_cells: array<Cell>;
 @group(3) @binding(1)
 var<storage, read_write> old_cells: array<Cell>;
+
+@group(4) @binding(0)
+var<storage, read> params: OtherParams;
 
 fn get_cell(world_pos: vec2<f32>) -> Cell {
   var c: Cell;
@@ -84,21 +92,20 @@ fn apply_velocities(@builtin(global_invocation_id) inv_id: vec3<u32>) {
 
   // **Do not update densities to solve Navier-Stokes as specified in an article**
   // !!! THREAD-UNSAFE!!!
-  // let new_idx = cell_idx(vec2(positions[i].x, positions[i].y));
-  // if (new_idx != old_idx) {
-  //   cur_cells[new_idx].density += 1.0;
-  //   cur_cells[old_idx].density -= 1.0;
-  // }
+  let new_idx = cell_idx(vec2(positions[i].x, positions[i].y));
+  if (new_idx != old_idx) {
+    cur_cells[new_idx].density += params.m0 / grid.cell_side / grid.cell_side;
+    cur_cells[old_idx].density -= params.m0 / grid.cell_side / grid.cell_side;
+  }
 }
 
-const MASS = 0.001;
 @compute @workgroup_size(1)
 fn mass_conservation(@builtin(global_invocation_id) inv_id: vec3<u32>) {
   let index = get_idx(inv_id.x, inv_id.y);
 
   {
     let x_border = inv_id.x == 0 || inv_id.x == grid.w - 1;
-    let y_border = inv_id.y == 0 || inv_id.y == grid.h - 1;
+    let y_border = inv_id.y == 0;
     if (x_border || y_border) {   
       cur_cells[index].vx = 0.0;
       cur_cells[index].vy = 0.0;
@@ -129,12 +136,16 @@ fn mass_conservation(@builtin(global_invocation_id) inv_id: vec3<u32>) {
   let grad_rho =
        vec2(right.density - left.density,
             top.density - bottom.density) / h;
-  let rho = old_cell.density - g.dt * (dot(grad_rho, u) + old_cell.density*div_u);
+  var rho = old_cell.density - g.dt * (dot(grad_rho, u) + old_cell.density*div_u);
   // CLAMP DENSITY
+  rho = clamp(rho, 0.0, 1000.0); 
 
-  let K = 0.3;
-  let S = K / g.dt;
+  let S = params.K / g.dt;
+  let grad_p = grad_rho * S;
   let laplacian = mat4x2f(u_right, u_left, u_top, u_bottom) * vec4f(1.0);
+  let du = g.dt * (0.0*laplacian - grad_p + vec2(0.0, -2.0));
 
   cur_cells[index].density = rho;
+  cur_cells[index].vx += du.x;
+  cur_cells[index].vy += du.y;
 }

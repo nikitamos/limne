@@ -51,6 +51,30 @@ pub struct SimulationRegenOptions {
   pub vmax: f32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SimulationParams {
+  pub k: f32,
+  pub m0: f32,
+}
+
+impl Default for SimulationParams {
+  fn default() -> Self {
+    Self { k: 0.3, m0: 0.01 }
+  }
+}
+
+impl AsBuffer for SimulationParams {
+  fn as_bytes_buffer(&self) -> &[u8] {
+    unsafe {
+      slice::from_raw_parts(
+        std::ptr::from_ref(self).cast(),
+        std::mem::size_of::<SimulationParams>(),
+      )
+    }
+  }
+}
+
 pub trait Simulation {
   fn step(&mut self, dt: f32);
   fn encoder_label<'a>(&self) -> Option<&'a str> {
@@ -95,8 +119,8 @@ pub mod two_d {
   use rand::Rng;
   use rayon::prelude::*;
   use wgpu::{
-    vertex_attr_array, MultisampleState, RenderPassColorAttachment, RenderPipelineDescriptor,
-    ShaderStages,
+    vertex_attr_array, BufferUsages, MultisampleState, RenderPassColorAttachment,
+    RenderPipelineDescriptor, ShaderStages,
   };
 
   use crate::render::swapchain::{SwapBuffers, SwapBuffersDescriptor};
@@ -119,11 +143,14 @@ pub mod two_d {
     pipeline: Option<wgpu::RenderPipeline>,
     grid_buf: Option<wgpu::Buffer>,
     grid_bg: Option<wgpu::BindGroup>,
+    params_buf: Option<wgpu::Buffer>,
+    params_bg: Option<wgpu::BindGroup>,
     x_cells: usize,
     y_cells: usize,
     height: f32,
     width: f32,
     opts: SimulationRegenOptions,
+    params: SimulationParams,
   }
 
   impl DefaultSim {
@@ -198,6 +225,8 @@ pub mod two_d {
         mass_consv_pipeline: None,
         grid_bg: None,
         grid_buf: None,
+        params_buf: None,
+        params_bg: None,
         x_cells,
         y_cells,
         cells: SwapBuffers::init_with(
@@ -215,6 +244,7 @@ pub mod two_d {
         height,
         width,
         opts,
+        params: Default::default()
       };
 
       out
@@ -240,20 +270,31 @@ pub mod two_d {
         label: Some("DefSim COMPUTE pass"),
         timestamp_writes: None,
       });
+      self.setup_groups_for_compute(global_bind_group, &mut pass);
+
+      pass.set_pipeline(self.mass_consv_pipeline.as_ref().unwrap());
+      pass.dispatch_workgroups(self.x_cells as u32, self.y_cells as u32, 1);
+
       pass.set_pipeline(self.move_pipeline.as_ref().unwrap());
+      pass.dispatch_workgroups(self.positions.cur().len() as u32, 1, 1);
+    }
+
+    fn setup_groups_for_compute(
+      &mut self,
+      global_bind_group: &wgpu::BindGroup,
+      pass: &mut wgpu::ComputePass<'_>,
+    ) {
       pass.set_bind_group(0, global_bind_group, &[]);
       pass.set_bind_group(1, self.grid_bg.as_ref().unwrap(), &[]);
       pass.set_bind_group(2, self.positions.cur_group(), &[]);
       pass.set_bind_group(3, self.cells.cur_group(), &[]);
-      pass.dispatch_workgroups(self.positions.cur().len() as u32, 1, 1);
-      pass.set_pipeline(self.mass_consv_pipeline.as_ref().unwrap());
-      pass.dispatch_workgroups(self.x_cells as u32, self.y_cells as u32, 1);
+      pass.set_bind_group(4, self.params_bg.as_ref().unwrap(), &[]);
     }
 
     pub fn regenerate_grid(&mut self, device: &wgpu::Device, opts: SimulationRegenOptions) {
       self.opts = opts;
-      let x_cells = (self.width as u32).div_ceil(opts.size as u32) as usize;
-      let y_cells = (self.height as u32).div_ceil(opts.size as u32) as usize;
+      let x_cells = (self.width / opts.size).ceil() as usize;
+      let y_cells = (self.height / opts.size).ceil() as usize;
       println!("Cell count: {}", x_cells * y_cells);
 
       let cells = vec![DefaultCell::default(); x_cells * y_cells];
@@ -299,6 +340,9 @@ pub mod two_d {
           .into(),
         device,
       );
+    }
+    pub fn set_params(&mut self, params: SimulationParams) {
+      self.params = params;
     }
   }
 
@@ -360,7 +404,39 @@ pub mod two_d {
           count: None,
         }],
       });
-
+      
+      // PARAMETER BUFFER
+      let params_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("SimParams bg layout"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+          binding: 0,
+          visibility: ShaderStages::COMPUTE,
+          ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Storage { read_only: true },
+            has_dynamic_offset: false,
+            min_binding_size: None,
+          },
+          count: None,
+        }],
+      });
+      let params_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Simulation params"),
+        size: std::mem::size_of::<SimulationParams>() as u64,
+        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE,
+        mapped_at_creation: false,
+      });
+      let params_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("SimParams BG itself"),
+        layout: &params_layout,
+        entries: &[wgpu::BindGroupEntry {
+          binding: 0,
+          resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+            buffer: &params_buf,
+            offset: 0,
+            size: None,
+          }),
+        }],
+      });
       // COMPUTE PIPELINES
       let compute_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("DefSim COMPUTE pipeline layout"),
@@ -369,6 +445,7 @@ pub mod two_d {
           &grid_bg_layout,
           &self.positions.cur_layout(),
           self.cells.cur_layout(),
+          &params_layout
         ],
         push_constant_ranges: &[],
       });
@@ -463,6 +540,9 @@ pub mod two_d {
 
       self.grid_buf = Some(grid_buf);
       self.grid_bg = Some(grid_bg);
+
+      self.params_bg = Some(params_bg);
+      self.params_buf = Some(params_buf);
     }
 
     fn write_buffers(&self, queue: &wgpu::Queue) {
@@ -477,6 +557,11 @@ pub mod two_d {
         .collect();
 
       queue.write_buffer(self.grid_buf.as_ref().unwrap(), 0, &a);
+      queue.write_buffer(
+        self.params_buf.as_ref().unwrap(),
+        0,
+        self.params.as_bytes_buffer(),
+      );
     }
 
     fn on_surface_resized(&mut self, size: egui::Vec2, device: &wgpu::Device) {

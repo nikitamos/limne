@@ -3,7 +3,7 @@ use eframe::CreationContext;
 use egui::{Button, Color32, Grid, Rect, Sense};
 use std::time::Instant;
 
-use super::simulation::SimulationRegenOptions;
+use super::simulation::{SimulationParams, SimulationRegenOptions};
 
 pub struct App {
   time: Instant,
@@ -11,11 +11,12 @@ pub struct App {
   cell_size: String,
   v_min: String,
   v_max: String,
-  k: f64,
   viewport_rect: Rect,
+  params: SimulationParams,
 }
 
-const K_RANGE: std::ops::RangeInclusive<f64> = 0.0..=1000.0;
+const K_RANGE: std::ops::RangeInclusive<f32> = 0.0..=100.0;
+const M0_RANGE: std::ops::RangeInclusive<f32> = 0.0..=100.0;
 
 impl eframe::App for App {
   fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
@@ -29,8 +30,10 @@ impl eframe::App for App {
     egui::SidePanel::left("simulation_props").show(ctx, |ui| {
       Grid::new("sim_props_grid").show(ui, |ui| {
         ui.label("Constant K");
-        ui.add(egui::Slider::new(&mut self.k, K_RANGE));
+        ui.add(egui::Slider::new(&mut self.params.k, K_RANGE).logarithmic(true));
         ui.end_row();
+        ui.label("m0");
+        ui.add(egui::Slider::new(&mut self.params.m0, M0_RANGE).logarithmic(true));
       });
       ui.collapsing("Re-generate grid", |ui| {
         Grid::new("regen_grid_opts").show(ui, |ui| {
@@ -80,7 +83,8 @@ impl eframe::App for App {
             dt: dt.as_secs_f32(),
             time: (time - self.startup_time).as_secs_f32(),
             regen_opts,
-            regen_pos
+            regen_pos,
+            params: self.params
           },
         ));
         self.viewport_rect = rect;
@@ -105,9 +109,9 @@ impl App {
       cell_size: String::new(),
       v_max: String::new(),
       v_min: String::new(),
-      k: 42.0,
       // Just a random rectangle
       viewport_rect: Rect::everything_above(0.0),
+      params: Default::default()
     }
   }
 }

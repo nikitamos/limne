@@ -28,6 +28,10 @@ async fn create_wgpu_setup() -> WgpuSetup {
     .request_device(
       &DeviceDescriptor {
         required_features: Features::VERTEX_WRITABLE_STORAGE,
+        required_limits: Limits {
+          max_bind_groups: 5,
+          ..Default::default()
+        },
         ..Default::default()
       },
       None,
