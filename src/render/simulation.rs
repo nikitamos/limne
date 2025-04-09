@@ -66,11 +66,20 @@ pub struct SimulationRegenOptions {
 pub struct SimulationParams {
   pub k: f32,
   pub m0: f32,
+  pub paused: bool,
+  pub draw_particles: bool,
+  pub draw_density_field: bool,
 }
 
 impl Default for SimulationParams {
   fn default() -> Self {
-    Self { k: 0.3, m0: 0.01 }
+    Self {
+      k: 0.3,
+      m0: 0.01,
+      paused: false,
+      draw_particles: false,
+      draw_density_field: true,
+    }
   }
 }
 
@@ -280,15 +289,19 @@ pub mod two_d {
       global_bind_group: &wgpu::BindGroup,
       pass: &mut wgpu::RenderPass<'_>,
     ) {
-      pass.set_pipeline(self.density_pipeline.as_ref().unwrap());
-      self.setup_groups_for_render(global_bind_group, pass);
-      pass.set_vertex_buffer(0, self.square_buffer.as_ref().unwrap().slice(..));
-      pass.draw(0..6, 0..(self.x_cells * self.y_cells) as u32);
+      if self.params.draw_density_field {
+        pass.set_pipeline(self.density_pipeline.as_ref().unwrap());
+        self.setup_groups_for_render(global_bind_group, pass);
+        pass.set_vertex_buffer(0, self.square_buffer.as_ref().unwrap().slice(..));
+        pass.draw(0..6, 0..(self.x_cells * self.y_cells) as u32);
+      }
 
-      pass.set_pipeline(self.pipeline.as_ref().unwrap());
-      pass.set_vertex_buffer(0, self.positions.cur_buf().slice(..));
-      self.setup_groups_for_render(global_bind_group, pass);
-      pass.draw(0..3, 0..(self.positions.cur().len() as u32));
+      if self.params.draw_particles {
+        pass.set_pipeline(self.pipeline.as_ref().unwrap());
+        pass.set_vertex_buffer(0, self.positions.cur_buf().slice(..));
+        self.setup_groups_for_render(global_bind_group, pass);
+        pass.draw(0..3, 0..(self.positions.cur().len() as u32));
+      }
     }
 
     fn setup_groups_for_render(
@@ -302,6 +315,9 @@ pub mod two_d {
     }
 
     pub fn compute(&mut self, encoder: &mut CommandEncoder, global_bind_group: &wgpu::BindGroup) {
+      if self.params.paused {
+        return;
+      }
       self.positions.swap(encoder);
       self.cells.swap(encoder);
       let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {

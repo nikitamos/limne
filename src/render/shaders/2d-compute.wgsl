@@ -139,7 +139,7 @@ fn mass_conservation(@builtin(global_invocation_id) inv_id: vec3<u32>) {
             top.density - bottom.density) / 2. / h;
   var rho = old_cell.density - g.dt * (dot(grad_rho, u) + old_cell.density*div_u);
   // CLAMP DENSITY
-  rho = clamp(rho, 0.0, 200.0);
+  rho = clamp(rho, 0.5, 3.0);
 
   let S = params.K / g.dt;
   let grad_p = grad_rho * S;
@@ -148,7 +148,7 @@ fn mass_conservation(@builtin(global_invocation_id) inv_id: vec3<u32>) {
   let pos = vec2(f32(inv_id.x) * h, f32(inv_id.y) *h) + 0.5*h;
   let external_force = vec2(pos.y, -pos.x);
   
-  let du = g.dt * (0.0*laplacian - grad_p + h*external_force);
+  let du = g.dt * (0.0*laplacian - grad_p + 2.0*h*normalize(external_force));
 
   cur_cells[index].density = rho;
   cur_cells[index].vx += du.x;

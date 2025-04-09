@@ -34,6 +34,14 @@ impl eframe::App for App {
         ui.end_row();
         ui.label("m0");
         ui.add(egui::Slider::new(&mut self.params.m0, M0_RANGE).logarithmic(true));
+        ui.end_row();
+
+        ui.checkbox(&mut self.params.paused, "Paused");
+        ui.end_row();
+        ui.checkbox(&mut self.params.draw_density_field, "Draw density field");
+        ui.end_row();
+        ui.checkbox(&mut self.params.draw_particles, "Draw particles");
+        ui.end_row();
       });
       ui.collapsing("Re-generate grid", |ui| {
         Grid::new("regen_grid_opts").show(ui, |ui| {
