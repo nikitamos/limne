@@ -9,6 +9,16 @@ pub trait AsBuffer {
   fn as_bytes_buffer(&self) -> &[u8];
 }
 
+#[rustfmt::skip]
+const SQUARE: [f32; 12] = [
+  0., 0.,
+  0., 1.,
+  1., 1.,
+  1., 1.,
+  0., 0.,
+  1., 0.
+];
+
 #[derive(Clone)]
 struct ParticleVector<T: Copy>(Vec<NumVector3D<T>>);
 
@@ -119,8 +129,9 @@ pub mod two_d {
   use rand::Rng;
   use rayon::prelude::*;
   use wgpu::{
-    vertex_attr_array, BufferUsages, MultisampleState, RenderPassColorAttachment,
-    RenderPipelineDescriptor, ShaderStages,
+    util::{BufferInitDescriptor, DeviceExt},
+    vertex_attr_array, BufferUsages, FragmentState, MultisampleState, PrimitiveState,
+    RenderPassColorAttachment, RenderPipelineDescriptor, ShaderStages,
   };
 
   use crate::render::swapchain::{SwapBuffers, SwapBuffersDescriptor};
@@ -128,11 +139,21 @@ pub mod two_d {
   use super::*;
 
   #[repr(C)]
-  #[derive(Default, Clone)]
+  #[derive(Clone)]
   pub(super) struct DefaultCell {
     pub velocity: NumVector3D<f32>,
     pub pressure: f32,
     pub density: f32,
+  }
+
+  impl Default for DefaultCell {
+    fn default() -> Self {
+      Self {
+        velocity: Default::default(),
+        pressure: Default::default(),
+        density: 2.0,
+      }
+    }
   }
 
   pub struct DefaultSim {
@@ -141,6 +162,8 @@ pub mod two_d {
     move_pipeline: Option<wgpu::ComputePipeline>,
     mass_consv_pipeline: Option<wgpu::ComputePipeline>,
     pipeline: Option<wgpu::RenderPipeline>,
+    density_pipeline: Option<wgpu::RenderPipeline>,
+    square_buffer: Option<wgpu::Buffer>,
     grid_buf: Option<wgpu::Buffer>,
     grid_bg: Option<wgpu::BindGroup>,
     params_buf: Option<wgpu::Buffer>,
@@ -223,6 +246,8 @@ pub mod two_d {
         pipeline: None,
         move_pipeline: None,
         mass_consv_pipeline: None,
+        density_pipeline: None,
+        square_buffer: None,
         grid_bg: None,
         grid_buf: None,
         params_buf: None,
@@ -255,12 +280,25 @@ pub mod two_d {
       global_bind_group: &wgpu::BindGroup,
       pass: &mut wgpu::RenderPass<'_>,
     ) {
+      pass.set_pipeline(self.density_pipeline.as_ref().unwrap());
+      self.setup_groups_for_render(global_bind_group, pass);
+      pass.set_vertex_buffer(0, self.square_buffer.as_ref().unwrap().slice(..));
+      pass.draw(0..6, 0..(self.x_cells * self.y_cells) as u32);
+
       pass.set_pipeline(self.pipeline.as_ref().unwrap());
       pass.set_vertex_buffer(0, self.positions.cur_buf().slice(..));
+      self.setup_groups_for_render(global_bind_group, pass);
+      pass.draw(0..3, 0..(self.positions.cur().len() as u32));
+    }
+
+    fn setup_groups_for_render(
+      &self,
+      global_bind_group: &wgpu::BindGroup,
+      pass: &mut wgpu::RenderPass<'_>,
+    ) {
       pass.set_bind_group(0, global_bind_group, &[]);
       pass.set_bind_group(1, &self.grid_bg, &[]);
       pass.set_bind_group(2, self.cells.cur_group(), &[]);
-      pass.draw(0..3, 0..(self.positions.cur().len() as u32));
     }
 
     pub fn compute(&mut self, encoder: &mut CommandEncoder, global_bind_group: &wgpu::BindGroup) {
@@ -300,6 +338,7 @@ pub mod two_d {
       let cells = vec![DefaultCell::default(); x_cells * y_cells];
       let direction = rand::distr::Uniform::new(0.0f32, f32::consts::TAU).unwrap();
       let vel_distr = rand::distr::Uniform::new(opts.vmin, opts.vmax).unwrap();
+      let density = rand::distr::Uniform::new(0.0, 3.0).unwrap();
 
       self.cells.reset(
         cells
@@ -310,6 +349,7 @@ pub mod two_d {
             let angle = rng.sample(direction);
             c.velocity.x = angle.cos() * v;
             c.velocity.y = angle.sin() * v;
+            c.density = rng.sample(density);
             c
           })
           .collect(),
@@ -514,6 +554,53 @@ pub mod two_d {
         cache: None,
       });
 
+      let squarebuffer = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("Unit square buffer"),
+        contents: SQUARE.as_bytes_buffer(),
+        usage: BufferUsages::VERTEX,
+      });
+      let celldensity = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("Cell density pipeline"),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+          module: &module,
+          entry_point: Some("vs_density"),
+          compilation_options: Default::default(),
+          buffers: &[wgpu::VertexBufferLayout {
+            array_stride: (size_of::<f32>() * 2) as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &vertex_attr_array![0 => Float32x2],
+          }],
+        },
+        primitive: PrimitiveState {
+          topology: wgpu::PrimitiveTopology::TriangleList,
+          strip_index_format: None,
+          front_face: wgpu::FrontFace::Ccw,
+          cull_mode: None,
+          unclipped_depth: false,
+          polygon_mode: wgpu::PolygonMode::Fill,
+          conservative: false,
+        },
+        depth_stencil: None,
+        multisample: MultisampleState {
+          count: 1,
+          mask: !0,
+          alpha_to_coverage_enabled: false,
+        },
+        fragment: Some(FragmentState {
+          module: &module,
+          entry_point: Some("fs_density"),
+          compilation_options: Default::default(),
+          targets: &[Some(wgpu::ColorTargetState {
+            format,
+            blend: Some(wgpu::BlendState::REPLACE),
+            write_mask: wgpu::ColorWrites::ALL,
+          })],
+        }),
+        multiview: None,
+        cache: None,
+      });
+
       let grid_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Cell dimension buffer"),
         // u32<WIDTH> | u32<HEIGHT> | f32<SIDE> | f32<VMIN> | f32<VMAX>
@@ -543,6 +630,9 @@ pub mod two_d {
 
       self.params_bg = Some(params_bg);
       self.params_buf = Some(params_buf);
+
+      self.density_pipeline = Some(celldensity);
+      self.square_buffer = Some(squarebuffer);
     }
 
     fn write_buffers(&self, queue: &wgpu::Queue) {

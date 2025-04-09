@@ -57,7 +57,7 @@ fn get_cell(world_pos: vec2<f32>) -> Cell {
 fn lerp(a1: f32, a2: f32,
         b1: f32, b2: f32,
         a: f32)-> f32 {
-  return b1 + (b2 - b1) * saturate(a / (a2 - a1));
+  return b1 + (b2 - b1) * saturate((a - a1) / (a2 - a1));
 }
 
 @fragment
@@ -114,9 +114,9 @@ fn vs_main(
 
   var out: VertexOutput;
 
-  // Да будут вовек мучены в преисподней грешныя
+  // Да будут вовек мучени в преисподней грешныя
   // души еретиков, воеже безцельнаго надругания
-  // над математикой строки co столбцы матриц преместиша.
+  // над математикой строки co столбцы заменяша.
 
   let world_to_clip = transpose(mat3x3(
     2.0 / g.size.x,       0.0,      -1.0,
@@ -130,4 +130,43 @@ fn vs_main(
   out.idx = in.idx;
   out.iid = in.iid;
   return out;
+}
+
+struct VsDensityOut {
+  @builtin(position) pos: vec4<f32>,
+};
+
+const MIN_DENSITY: f32 = 0.5;
+const MAX_DENSITY: f32 = 3.0;
+@fragment
+fn fs_density(in: VsDensityOut) -> @location(0) vec4<f32> {
+  var c = get_cell(in.pos.xy);
+  let sat = lerp(MIN_DENSITY, MAX_DENSITY, 0.0, 1.0, c.density);
+  let v = c.vx*c.vx + c.vy*c.vy;
+  let v_percent = 0.0; lerp(grid.vmin, grid.vmax, 0.0, 1.0, v);
+
+  // return mix(vec4(0., 1., sat, 1.), vec4(1., 0., sat, 1.), v_percent);
+  return vec4(sat, sat, sat, 1.);
+}
+
+@vertex
+fn vs_density(
+  @builtin(instance_index) idx: u32,
+  @location(0) pos: vec2<f32>
+) -> VsDensityOut {
+  var world = pos * grid.cell_side;
+  world += grid.cell_side * (vec2f(f32(idx % grid.w), f32(idx / grid.w)) - 1.0);
+  var w3 = vec3(world, 1.0);
+
+
+  let world_to_clip = transpose(mat3x3(
+    2.0 / g.size.x,       0.0,      -1.0,
+        0.0,        2.0 / g.size.y, -1.0,
+        0.0,            0.0,      0.0
+  ));
+
+  var o: VsDensityOut;
+  let clip = world_to_clip * w3;
+  o.pos = vec4f(clip, 1.0);
+  return o;
 }
