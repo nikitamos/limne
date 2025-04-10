@@ -134,28 +134,41 @@ fn vs_main(
 
 struct VsDensityOut {
   @builtin(position) pos: vec4<f32>,
+  @location(0) cell_pos: vec2<f32>,
+  @location(1) cell_id: u32,
 };
 
 const MIN_DENSITY: f32 = 0.5;
 const MAX_DENSITY: f32 = 3.0;
 @fragment
 fn fs_density(in: VsDensityOut) -> @location(0) vec4<f32> {
-  var c = get_cell(in.pos.xy);
+  var c = get_cell(in.cell_pos.xy);
   let sat = lerp(MIN_DENSITY, MAX_DENSITY, 0.0, 1.0, c.density);
+  // let sat = f32(in.cell_id) / f32(grid.w) / f32(grid.h);
   let v = c.vx*c.vx + c.vy*c.vy;
-  let v_percent = 0.0; lerp(grid.vmin, grid.vmax, 0.0, 1.0, v);
+  let v_percent = lerp(grid.vmin, grid.vmax, 0.0, 1.0, v);
 
   // return mix(vec4(0., 1., sat, 1.), vec4(1., 0., sat, 1.), v_percent);
-  return vec4(sat, sat, sat, 1.);
+  // return vec4(mix(vec2(0.0), vec2(1.0), in.pos.xy / vec2f(f32(grid.w), f32(grid.h))), 0., 1.);
+  // return vec4(in.cell_pos.xy, 0., 1.);
+  // return vec4(sat, sat, length(in.cell_pos)/sqrt(f32(grid.w*grid.w + grid.h*grid.h)), 1.);
+  // if (c.density == 0.0) {
+  //   return vec4(1.,0.,0.,1.);
+  // }
+  // if (c.vx == 0. && c.vy == 0.) {
+  //   return vec4(0., 1., 0., 1.);
+  // }
+  return vec4(sat, sat, sat, 1.0);
 }
 
 @vertex
 fn vs_density(
   @builtin(instance_index) idx: u32,
+  // Vertex of unit square
   @location(0) pos: vec2<f32>
 ) -> VsDensityOut {
   var world = pos * grid.cell_side;
-  world += grid.cell_side * (vec2f(f32(idx % grid.w), f32(idx / grid.w)) - 1.0);
+  world += grid.cell_side * (vec2f(f32(idx % grid.w), f32(idx / grid.w)));
   var w3 = vec3(world, 1.0);
 
 
@@ -166,7 +179,9 @@ fn vs_density(
   ));
 
   var o: VsDensityOut;
-  let clip = world_to_clip * w3;
+  var clip = world_to_clip * w3;
   o.pos = vec4f(clip, 1.0);
+  o.cell_pos = world;
+  o.cell_id = idx;
   return o;
 }

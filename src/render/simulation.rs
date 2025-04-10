@@ -14,9 +14,9 @@ const SQUARE: [f32; 12] = [
   0., 0.,
   0., 1.,
   1., 1.,
-  1., 1.,
+  1., 0.,
   0., 0.,
-  1., 0.
+  1., 1.,
 ];
 
 #[derive(Clone)]
@@ -69,6 +69,7 @@ pub struct SimulationParams {
   pub paused: bool,
   pub draw_particles: bool,
   pub draw_density_field: bool,
+  pub move_particles: bool,
 }
 
 impl Default for SimulationParams {
@@ -79,6 +80,7 @@ impl Default for SimulationParams {
       paused: false,
       draw_particles: false,
       draw_density_field: true,
+      move_particles: true
     }
   }
 }
@@ -329,8 +331,10 @@ pub mod two_d {
       pass.set_pipeline(self.mass_consv_pipeline.as_ref().unwrap());
       pass.dispatch_workgroups(self.x_cells as u32, self.y_cells as u32, 1);
 
-      pass.set_pipeline(self.move_pipeline.as_ref().unwrap());
-      pass.dispatch_workgroups(self.positions.cur().len() as u32, 1, 1);
+      if self.params.move_particles {
+        pass.set_pipeline(self.move_pipeline.as_ref().unwrap());
+        pass.dispatch_workgroups(self.positions.cur().len() as u32, 1, 1);
+    }
     }
 
     fn setup_groups_for_compute(

@@ -29,7 +29,7 @@ impl eframe::App for App {
 
     egui::SidePanel::left("simulation_props").show(ctx, |ui| {
       Grid::new("sim_props_grid").show(ui, |ui| {
-        ui.label("Constant K");
+        ui.label("K");
         ui.add(egui::Slider::new(&mut self.params.k, K_RANGE).logarithmic(true));
         ui.end_row();
         ui.label("m0");
@@ -37,6 +37,12 @@ impl eframe::App for App {
         ui.end_row();
 
         ui.checkbox(&mut self.params.paused, "Paused");
+        ui.end_row();
+        if !self.params.paused{
+          ui.checkbox(&mut self.params.move_particles, "Move particles");
+          ui.end_row();
+        }
+        ui.separator();
         ui.end_row();
         ui.checkbox(&mut self.params.draw_density_field, "Draw density field");
         ui.end_row();

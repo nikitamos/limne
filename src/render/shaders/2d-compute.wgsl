@@ -85,7 +85,7 @@ struct Vec3 {
 fn apply_velocities(@builtin(global_invocation_id) inv_id: vec3<u32>) {
   let i = inv_id.x;
   let old_idx = cell_idx(vec2(positions[i].x, positions[i].y));
-  let c = cur_cells[old_idx];
+  let c = old_cells[old_idx];
 
   positions[i].x += g.dt * c.vx;
   positions[i].y += g.dt * c.vy;
@@ -93,10 +93,10 @@ fn apply_velocities(@builtin(global_invocation_id) inv_id: vec3<u32>) {
   // **Do not update densities to solve Navier-Stokes as specified in an article**
   // !!! THREAD-UNSAFE!!!
   let new_idx = cell_idx(vec2(positions[i].x, positions[i].y));
-  // if (new_idx != old_idx) {
-  //   cur_cells[new_idx].density += params.m0 / grid.cell_side / grid.cell_side;
-  //   cur_cells[old_idx].density -= params.m0 / grid.cell_side / grid.cell_side;
-  // }
+  if (new_idx != old_idx) {
+    old_cells[new_idx].density += params.m0 / grid.cell_side / grid.cell_side;
+    old_cells[old_idx].density -= params.m0 / grid.cell_side / grid.cell_side;
+  }
 }
 
 @compute @workgroup_size(1)
@@ -105,12 +105,14 @@ fn mass_conservation(@builtin(global_invocation_id) inv_id: vec3<u32>) {
 
   {
     let x_border = inv_id.x == 0 || inv_id.x == grid.w - 1;
-    let y_border = inv_id.y == 0;
+    let zerozone = (0.5 * f32(grid.h) <= f32(inv_id.y) && f32(inv_id.y) <= 0.7 * f32(grid.h));
+    let y_border = inv_id.y == 0 || zerozone;
     if (x_border || y_border) {   
       cur_cells[index].vx = 0.0;
       cur_cells[index].vy = 0.0;
-      if (inv_id.x == 0)
-      {cur_cells[index].density = 5.0;}
+      cur_cells[index].density = 0.0;
+      // if (inv_id.y == 0)
+      // {cur_cells[index].density = 3.0;}
       return;
     }
   }
@@ -148,7 +150,7 @@ fn mass_conservation(@builtin(global_invocation_id) inv_id: vec3<u32>) {
   let pos = vec2(f32(inv_id.x) * h, f32(inv_id.y) *h) + 0.5*h;
   let external_force = vec2(pos.y, -pos.x);
   
-  let du = g.dt * (0.0*laplacian - grad_p + 2.0*h*normalize(external_force));
+  let du = g.dt * (0.0*laplacian - grad_p + 2.0*h*normalize(external_force) /*vec2(0.0, -25.0)*/);
 
   cur_cells[index].density = rho;
   cur_cells[index].vx += du.x;
