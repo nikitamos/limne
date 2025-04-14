@@ -32,7 +32,7 @@ impl PersistentState {
   pub fn update(&mut self, dt: f32, total: f32) {
     self.simulation.step(dt);
   }
-  pub fn create(rstate: &RenderState) -> Self {
+  pub fn create(rstate: &RenderState, opts: SimulationRegenOptions) -> Self {
     let RenderState {
       device,
       adapter,
@@ -91,7 +91,7 @@ impl PersistentState {
         },
         *format,
         &global_layout,
-        SimulationRegenOptions{size: 1., vmin: 10.0, vmax: 500.0}
+        opts
       ),
       global_bind,
       viewport_buf,

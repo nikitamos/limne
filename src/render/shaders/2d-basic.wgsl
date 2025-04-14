@@ -138,8 +138,8 @@ struct VsDensityOut {
   @location(1) cell_id: u32,
 };
 
-const MIN_DENSITY: f32 = 0.5;
-const MAX_DENSITY: f32 = 3.0;
+const MIN_DENSITY: f32 = 15.0;
+const MAX_DENSITY: f32 = 100.0;
 @fragment
 fn fs_density(in: VsDensityOut) -> @location(0) vec4<f32> {
   var c = get_cell(in.cell_pos.xy);

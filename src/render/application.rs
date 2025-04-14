@@ -17,6 +17,7 @@ pub struct App {
 
 const K_RANGE: std::ops::RangeInclusive<f32> = 0.0..=100.0;
 const M0_RANGE: std::ops::RangeInclusive<f32> = 0.0..=100.0;
+const NU_RANGE: std::ops::RangeInclusive<f32> = 0.0..=10.0;
 
 impl eframe::App for App {
   fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
@@ -34,6 +35,9 @@ impl eframe::App for App {
         ui.end_row();
         ui.label("m0");
         ui.add(egui::Slider::new(&mut self.params.m0, M0_RANGE).logarithmic(true));
+        ui.end_row();
+        ui.label("ν");
+        ui.add(egui::Slider::new(&mut self.params.viscosity, NU_RANGE));
         ui.end_row();
 
         ui.checkbox(&mut self.params.paused, "Paused");
@@ -111,7 +115,8 @@ impl eframe::App for App {
 impl App {
   pub fn new(cc: &CreationContext<'_>) -> Self {
     let wgpu_render_state = cc.wgpu_render_state.as_ref().unwrap();
-    let state = PersistentState::create(wgpu_render_state);
+    let opts = SimulationRegenOptions::default();
+    let state = PersistentState::create(wgpu_render_state, opts);
     wgpu_render_state
       .renderer
       .write()
@@ -120,9 +125,9 @@ impl App {
     Self {
       time: Instant::now(),
       startup_time: Instant::now(),
-      cell_size: String::new(),
-      v_max: String::new(),
-      v_min: String::new(),
+      cell_size: opts.size.to_string(),
+      v_max: opts.vmax.to_string(),
+      v_min: opts.vmin.to_string(),
       // Just a random rectangle
       viewport_rect: Rect::everything_above(0.0),
       params: Default::default()

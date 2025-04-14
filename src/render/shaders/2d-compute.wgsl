@@ -23,6 +23,7 @@ struct Grid {
 struct OtherParams {
   K: f32,
   m0: f32,
+  nu: f32,
 };
 
 // Grid (dimensions, cell sides)
@@ -92,29 +93,77 @@ fn apply_velocities(@builtin(global_invocation_id) inv_id: vec3<u32>) {
 
   // **Do not update densities to solve Navier-Stokes as specified in an article**
   // !!! THREAD-UNSAFE!!!
-  let new_idx = cell_idx(vec2(positions[i].x, positions[i].y));
-  if (new_idx != old_idx) {
-    old_cells[new_idx].density += params.m0 / grid.cell_side / grid.cell_side;
-    old_cells[old_idx].density -= params.m0 / grid.cell_side / grid.cell_side;
+  // let new_idx = cell_idx(vec2(positions[i].x, positions[i].y));
+  // if (new_idx != old_idx) {
+  //   old_cells[new_idx].density += params.m0 / grid.cell_side / grid.cell_side;
+  //   old_cells[old_idx].density -= params.m0 / grid.cell_side / grid.cell_side;
+  // }
+}
+
+fn is_border(cell: vec2<u32>) -> bool{
+  let x = f32(cell.x) - f32(grid.w/2);
+  let y = f32(cell.y) - f32(grid.h/2);
+  // let zerozone = abs(f32(cell.y) - f32(grid.h/2)) + abs(f32(cell.x) - f32(grid.w/2)) <= 20.0; // Azteck diamond
+  let zerozone = x*x + y*y <= 80.; // Circle
+  // let zerozone = abs(x) <= 35 && abs(y) <= 40 && y <= x*x - 35; // Square
+  let y_border = cell.y <= 4 || cell.y >= grid.h - 4;
+  let x_border = cell.x <= 4 || cell.x >= grid.w - 4;
+  return zerozone || y_border || x_border;
+}
+
+fn choose_difference(l: f32, c: f32, r: f32, cell: vec2<u32>, y: bool) -> f32 {
+  var hi: f32;
+  var lo: f32;
+  var mul = 0.0;
+  var topcell = cell;
+  var botcell = cell;
+  if (y) {
+    topcell.y += 1u;
+    if (botcell.y != 0)
+    { botcell.y -= 1u; }
+  } else {
+    topcell.x += 1u;
+    if (botcell.x != 0)
+    { botcell.x -= 1u; }
   }
+  let top = is_border(topcell);
+  let bot = is_border(botcell);
+
+  if (bot && top || is_border(cell)) {
+    return 0.0;
+  } else if (bot && !top) {
+    return r - c;
+  } else if (top && !bot) {
+    return c - l;
+  } else {
+    return (r - l) / 2.;
+  }
+
+  // if (!is_border(topcell)) {
+  //   hi = r;
+  //   mul = 1.0;
+  // } else {
+  //   mul = 2.0;
+  //   hi = c;
+  // }
+  // if (!is_border(botcell)) {
+  //   lo = l;
+  //   mul *= 0.5;
+  // } else {
+  //   lo = c;
+  // }
+  // return (hi - lo) * mul;
 }
 
 @compute @workgroup_size(1)
 fn mass_conservation(@builtin(global_invocation_id) inv_id: vec3<u32>) {
   let index = get_idx(inv_id.x, inv_id.y);
 
-  {
-    let x_border = inv_id.x == 0 || inv_id.x == grid.w - 1;
-    let zerozone = (0.5 * f32(grid.h) <= f32(inv_id.y) && f32(inv_id.y) <= 0.7 * f32(grid.h));
-    let y_border = inv_id.y == 0 || zerozone;
-    if (x_border || y_border) {   
-      cur_cells[index].vx = 0.0;
-      cur_cells[index].vy = 0.0;
-      cur_cells[index].density = 0.0;
-      // if (inv_id.y == 0)
-      // {cur_cells[index].density = 3.0;}
-      return;
-    }
+  if (is_border(inv_id.xy)) {
+    cur_cells[index].vx = 0.0;
+    cur_cells[index].vy = 0.0;
+    cur_cells[index].density = 0.0;
+    return;
   }
 
   let h = grid.cell_side;
@@ -127,6 +176,7 @@ fn mass_conservation(@builtin(global_invocation_id) inv_id: vec3<u32>) {
   let right = old_cell_at(inv_id.x+1, inv_id.y);
 
   let u = vec2(cur_cell.vx, cur_cell.vy);
+  let density = old_cell.density;
   let u_top = vec2(top.vx, top.vy);
   let u_left = vec2(left.vx, left.vy);
   let u_right = vec2(right.vx, right.vy);
@@ -136,12 +186,13 @@ fn mass_conservation(@builtin(global_invocation_id) inv_id: vec3<u32>) {
   let du_dy = (u_top - u_bottom) / h;
   let div_u = du_dx.x + du_dy.y;
 
-  let grad_rho =
-       vec2(right.density - left.density,
-            top.density - bottom.density) / 2. / h;
+  var grad_rho: vec2<f32>;
+  
+  grad_rho = vec2(choose_difference(left.vx, u.x, right.vx, inv_id.xy, false),
+                  choose_difference(bottom.vy, u.y, top.vy, inv_id.xy, true))/h;
   var rho = old_cell.density - g.dt * (dot(grad_rho, u) + old_cell.density*div_u);
   // CLAMP DENSITY
-  rho = clamp(rho, 0.5, 3.0);
+  rho = clamp(rho, 0.5, 100.0);
 
   let S = params.K / g.dt;
   let grad_p = grad_rho * S;
@@ -150,7 +201,7 @@ fn mass_conservation(@builtin(global_invocation_id) inv_id: vec3<u32>) {
   let pos = vec2(f32(inv_id.x) * h, f32(inv_id.y) *h) + 0.5*h;
   let external_force = vec2(pos.y, -pos.x);
   
-  let du = g.dt * (0.0*laplacian - grad_p + 2.0*h*normalize(external_force) /*vec2(0.0, -25.0)*/);
+  let du = g.dt * (params.nu*laplacian - grad_p + vec2(0.0, -15.0));
 
   cur_cells[index].density = rho;
   cur_cells[index].vx += du.x;

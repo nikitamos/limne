@@ -1,5 +1,5 @@
 use core::slice;
-use std::ops::{Deref, DerefMut};
+use std::ops::{Deref, DerefMut, Range};
 
 use crate::math::vector::NumVector3D;
 use two_d::DefaultCell;
@@ -54,6 +54,11 @@ impl<const N: usize> AsBuffer for [f32; N] {
   }
 }
 
+pub enum ValueRegenOptions {
+  Range(Range<f32>),
+  Constant(f32),
+}
+
 #[derive(Clone, Copy)]
 pub struct SimulationRegenOptions {
   pub size: f32,
@@ -61,11 +66,22 @@ pub struct SimulationRegenOptions {
   pub vmax: f32,
 }
 
+impl Default for SimulationRegenOptions {
+  fn default() -> Self {
+    Self {
+      size: 5.0,
+      vmin: 2.0,
+      vmax: 7.5,
+    }
+  }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SimulationParams {
   pub k: f32,
   pub m0: f32,
+  pub viscosity: f32,
   pub paused: bool,
   pub draw_particles: bool,
   pub draw_density_field: bool,
@@ -77,6 +93,7 @@ impl Default for SimulationParams {
     Self {
       k: 0.3,
       m0: 0.01,
+      viscosity: 0.0,
       paused: false,
       draw_particles: false,
       draw_density_field: true,
