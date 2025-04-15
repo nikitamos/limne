@@ -1,5 +1,5 @@
 use cgmath::{
-  Deg, EuclideanSpace, Matrix4, Point3, Quaternion, Rad, Rotation, Rotation3, Vector2, Vector3,
+  EuclideanSpace, Matrix4, Point3, Quaternion, Rad, Rotation, Rotation3, Vector2, Vector3,
 };
 
 pub struct CameraController {

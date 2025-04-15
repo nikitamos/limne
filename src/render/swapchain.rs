@@ -135,13 +135,13 @@ impl<T: Clone + AsBuffer> SwapBuffers<T> {
 
     let bg1 = dev.create_bind_group(&BindGroupDescriptor {
       label: None,
-      layout: &layout,
+      layout,
       entries: &[entry0.clone(), entry1.clone()],
     });
 
     let bg2 = dev.create_bind_group(&BindGroupDescriptor {
       label: None,
-      layout: &layout,
+      layout,
       entries: &[entry1, entry0],
     });
 

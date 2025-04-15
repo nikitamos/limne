@@ -1,5 +1,5 @@
 use bindings::{GLOBAL_BIND_LOC, GLOBAL_BIND_SIZE};
-use cgmath::{ortho, perspective, Matrix4, Rad, Vector4};
+use cgmath::Matrix4;
 use egui_wgpu::{CallbackTrait, RenderState};
 use std::{io::Read, num::NonZero};
 use wgpu::{
@@ -92,7 +92,7 @@ impl PersistentState {
         }),
       }],
     });
-    let clear_pipeline = Self::create_pipeline(&device, *format, &[&global_layout]);
+    let clear_pipeline = Self::create_pipeline(device, *format, &[&global_layout]);
 
     Self {
       clear_pipeline,
@@ -128,7 +128,8 @@ impl PersistentState {
       push_constant_ranges: &[],
     });
 
-    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+    
+    device.create_render_pipeline(&RenderPipelineDescriptor {
       label: Some("random pipeline"),
       layout: Some(&pipeline_layout),
       vertex: VertexState {
@@ -164,8 +165,7 @@ impl PersistentState {
       }),
       multiview: None,
       cache: None,
-    });
-    pipeline
+    })
   }
 
   pub fn resize(&mut self, size: egui::Vec2, device: &wgpu::Device) {
@@ -174,7 +174,7 @@ impl PersistentState {
       self.simulation.on_surface_resized(size, device);
       self
         .simulation
-        .reinit_pipelines(&device, self.format, &self.global_layout);
+        .reinit_pipelines(device, self.format, &self.global_layout);
       self.projection = GL_TRANSFORM_TO_WGPU * cgmath::ortho(0., size.x, 0., size.y, 0., 100000.0);
     }
   }
@@ -233,7 +233,7 @@ impl CallbackTrait for StateCallback {
       .as_bytes_buffer()
       .to_owned()
       .into_iter()
-      .chain(projection.as_bytes_buffer().to_owned().into_iter())
+      .chain(projection.as_bytes_buffer().to_owned())
       .collect();
     queue.write_buffer(&state.viewport_buf, 0, &buf_vec);
 

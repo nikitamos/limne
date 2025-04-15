@@ -2,7 +2,7 @@ use core::slice;
 use std::ops::{Deref, DerefMut, Range};
 
 use crate::math::vector::NumVector3D;
-use cgmath::{Matrix, Matrix4, Vector4};
+use cgmath::{Matrix, Matrix4};
 use two_d::DefaultCell;
 use wgpu::{CommandBuffer, CommandEncoder, VertexBufferLayout};
 
@@ -264,10 +264,12 @@ pub mod two_d {
         }
       }
 
-      let out = Self {
+      
+
+      Self {
         positions: SwapBuffers::init_with(
           positions.into(),
-          &device,
+          device,
           SwapBuffersDescriptor {
             usage: wgpu::BufferUsages::STORAGE
               | wgpu::BufferUsages::COPY_DST
@@ -305,9 +307,7 @@ pub mod two_d {
         width,
         opts,
         params: Default::default(),
-      };
-
-      out
+      }
     }
 
     pub fn render_into_pass(
@@ -527,7 +527,7 @@ pub mod two_d {
         bind_group_layouts: &[
           global_layout,
           &grid_bg_layout,
-          &self.positions.cur_layout(),
+          self.positions.cur_layout(),
           self.cells.cur_layout(),
           &params_layout,
         ],
@@ -683,9 +683,8 @@ pub mod two_d {
       let celldims = (self.x_cells as u32, self.y_cells as u32);
       let a: Vec<_> = [celldims.0, celldims.1]
         .into_iter()
-        .map(|x| x.to_ne_bytes())
-        .flatten()
-        .chain(self.opts.size.to_ne_bytes().into_iter())
+        .flat_map(|x| x.to_ne_bytes())
+        .chain(self.opts.size.to_ne_bytes())
         .chain(self.opts.vmin.to_ne_bytes())
         .chain(self.opts.vmax.to_ne_bytes())
         .collect();

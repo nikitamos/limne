@@ -1,11 +1,11 @@
 use crate::render::state::*;
-use cgmath::{num_traits::zero, InnerSpace, Point3, Vector2, Zero};
+use cgmath::{num_traits::zero, InnerSpace, Vector2, Zero};
 use eframe::CreationContext;
 use egui::{Button, Color32, Grid, Key, Rect, Sense};
 use std::time::Instant;
 
 use super::{
-  camera::{self, CameraController},
+  camera::{CameraController},
   simulation::{SimulationParams, SimulationRegenOptions},
 };
 
