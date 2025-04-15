@@ -114,20 +114,7 @@ fn vs_main(
   }
 
   var out: VertexOutput;
-
-  // Да будут вовек мучени в преисподней грешныя
-  // души еретиков, воеже безцельнаго надругания
-  // над математикой строки co столбцы заменяша.
-
-  let world_to_clip = transpose(mat3x3(
-    2.0 / g.size.x,       0.0,      -1.0,
-        0.0,        2.0 / g.size.y, -1.0,
-        0.0,            0.0,      0.0
-  ));
-  
-  // out.pos = vec4(world_to_clip * vec3(in.pos.x+d.x, in.pos.y+d.y, 1.0), 1.0);
   out.pos = g.camera * vec4(in.pos.x + d.x, in.pos.y + d.y, 0.0, 1.0);
-  // out.pos = vec4(g.size.x/2 + d.x, g.size.y/2+d.y, 0.5, 1.0) * g.camera;
 
   out.particle_pos = in.pos;
   out.idx = in.idx;
@@ -172,18 +159,10 @@ fn vs_density(
 ) -> VsDensityOut {
   var world = pos * grid.cell_side;
   world += grid.cell_side * (vec2f(f32(idx % grid.w), f32(idx / grid.w)));
-  var w3 = vec3(world, 1.0);
-
-
-  let world_to_clip = transpose(mat3x3(
-    2.0 / g.size.x,       0.0,      -1.0,
-        0.0,        2.0 / g.size.y, -1.0,
-        0.0,            0.0,      0.0
-  ));
+  var w3 = vec4(world, 0.0, 1.0);
 
   var o: VsDensityOut;
-  var clip = world_to_clip * w3;
-  o.pos = vec4f(clip, 1.0);
+  o.pos = g.camera * w3;
   o.cell_pos = world;
   o.cell_id = idx;
   return o;

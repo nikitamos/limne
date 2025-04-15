@@ -1,10 +1,11 @@
 use crate::render::state::*;
+use cgmath::{num_traits::zero, InnerSpace, Point3, Vector2, Zero};
 use eframe::CreationContext;
-use egui::{Button, Color32, Grid, Rect, Sense};
+use egui::{Button, Color32, Grid, Key, Rect, Sense};
 use std::time::Instant;
 
 use super::{
-  camera::CameraController,
+  camera::{self, CameraController},
   simulation::{SimulationParams, SimulationRegenOptions},
 };
 
@@ -46,7 +47,7 @@ impl eframe::App for App {
 
         ui.checkbox(&mut self.params.paused, "Paused");
         ui.end_row();
-        if !self.params.paused{
+        if !self.params.paused {
           ui.checkbox(&mut self.params.move_particles, "Move particles");
           ui.end_row();
         }
@@ -94,13 +95,53 @@ impl eframe::App for App {
         self.viewport_rect.height() as usize
       ));
       ui.end_row();
-      ui.label(format!("Frame time: {:.2}ms, {:.0} FPS", dt.as_millis_f32(), 1.0 / dt.as_secs_f32()));
+      let camera_pos = self.controller.get_pos();
+      ui.label(format!(
+        "Frame time: {:.2}ms, {:.0} FPS\n Camera at: ({:.1} {:.1} {:.1})`",
+        dt.as_millis_f32(),
+        1.0 / dt.as_secs_f32(),
+        camera_pos.x,
+        camera_pos.y,
+        camera_pos.z
+      ));
+      if ui.button("Reset camera").clicked() {
+        self.controller.reset();
+      }
     });
     egui::CentralPanel::default().show(ctx, |ui| {
       egui::Frame::canvas(ui.style()).show(ui, |ui| {
         let (rect, resp) = ui.allocate_exact_size(ui.available_size(), Sense::all());
         let drag = resp.drag_motion() * 0.07;
-        self.controller.handle_drag(drag).get_camera();
+        let (fwd, back, right, left) = ui.input(|i| {
+          (
+            i.key_down(Key::W),
+            i.key_down(Key::S),
+            i.key_down(Key::D),
+            i.key_down(Key::A),
+          )
+        });
+        let mut delta = Vector2::<_>::zero();
+        if fwd {
+          delta.x += 1.0;
+        }
+        if back {
+          delta.x -= 1.0;
+        }
+        if right {
+          delta.y += 1.0;
+        } if left {
+          delta.y -= 1.0;
+        }
+        if delta != zero() {
+          delta = delta.normalize() * 2.0;
+        }
+
+        self
+          .controller
+          .handle_drag(drag)
+          // .look_at(Point3::new(rect.width() / 2., rect.height() / 2., 0.))
+          .move_center_local(delta)
+          .get_camera();
 
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
           rect,
@@ -110,7 +151,7 @@ impl eframe::App for App {
             regen_opts,
             regen_pos,
             params: self.params,
-            camera: self.controller.get_camera()
+            camera: self.controller.get_camera(),
           },
         ));
         self.viewport_rect = rect;
@@ -139,7 +180,7 @@ impl App {
       // Just a random rectangle
       viewport_rect: Rect::everything_above(0.0),
       params: Default::default(),
-      controller: Default::default()
+      controller: Default::default(),
     }
   }
 }

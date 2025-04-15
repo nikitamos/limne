@@ -105,13 +105,13 @@ impl PersistentState {
         },
         *format,
         &global_layout,
-        opts
+        opts,
       ),
       global_bind,
       viewport_buf,
       global_layout,
       size: egui::Vec2::ZERO,
-      format: *format, 
+      format: *format,
       projection: cgmath::ortho(0.0, 200.0, 0.0, 400.0, 0.0, 30.0),
     }
   }
@@ -173,11 +173,9 @@ impl PersistentState {
       self.size = size;
       self.simulation.on_surface_resized(size, device);
       self
-      .simulation
-      .reinit_pipelines(&device, self.format, &self.global_layout);
-      self.projection = GL_TRANSFORM_TO_WGPU * cgmath::ortho(0.,size.x, 0., size.y, 0., 1000.0);
-      println!("Resize, new cam: !");
-      dbg!(&self.projection);
+        .simulation
+        .reinit_pipelines(&device, self.format, &self.global_layout);
+      self.projection = GL_TRANSFORM_TO_WGPU * cgmath::ortho(0., size.x, 0., size.y, 0., 100000.0);
     }
   }
 
@@ -237,11 +235,7 @@ impl CallbackTrait for StateCallback {
       .into_iter()
       .chain(projection.as_bytes_buffer().to_owned().into_iter())
       .collect();
-    queue.write_buffer(
-      &state.viewport_buf,
-      0,
-      &buf_vec,
-    );
+    queue.write_buffer(&state.viewport_buf, 0, &buf_vec);
 
     let Some(state) = callback_resources.get_mut::<PersistentState>() else {
       unreachable!()

@@ -3,7 +3,7 @@ use cgmath::{
 };
 
 pub struct CameraController {
-  look_at: Point3<f32>,
+  center: Point3<f32>,
   right: Vector3<f32>,
   up: Vector3<f32>,
   r: f32,
@@ -12,10 +12,10 @@ pub struct CameraController {
 impl Default for CameraController {
   fn default() -> Self {
     Self {
-      look_at: Point3::origin(),
+      center: Point3::origin(),
       right: Vector3::unit_x(),
       up: Vector3::unit_y(),
-      r: 10.,
+      r: 1000.,
     }
   }
 }
@@ -35,27 +35,51 @@ struct Projection {
 
 impl CameraController {
   pub fn look_at(&mut self, point: Point3<f32>) -> &mut Self {
-    self.look_at = point;
+    self.center = point;
     self
   }
   pub fn handle_drag(&mut self, vec: egui::Vec2) -> &mut Self {
     if vec.length() == 0. {
       return self;
     }
-    let up_rot = Quaternion::from_axis_angle(self.right, Rad(vec.y / self.r));
-    let right_rot = Quaternion::from_axis_angle(self.up, Rad(vec.x / self.r));
+    let up_rot = Quaternion::from_axis_angle(self.right, Rad(vec.y));
+    let right_rot = Quaternion::from_axis_angle(self.up, Rad(vec.x));
 
     self.up = up_rot.rotate_vector(self.up);
     self.right = right_rot.rotate_vector(self.right);
-    dbg!(self.right);
-    dbg!(self.up);
     self
+  }
+
+  pub fn get_pos(&mut self) -> Point3<f32> {
+    self.center + self.right.cross(self.up) * self.r
+  }
+  pub fn reset(&mut self) -> &mut Self {
+    *self = Self::default();
+    self
+  }
+
+  pub fn move_center_global(&mut self, delta: Vector3<f32>) -> &mut Self {
+    self.center += delta;
+    self
+  }
+
+  /// Moves center in local coordinates
+  /// X axis is facing to the center,
+  /// Y axis is facing to the 'right'
+  pub fn move_center_local(&mut self, delta: Vector2<f32>) -> &mut Self {
+    let r = self.up.cross(self.right);
+    self.center += r * delta.x + self.right * delta.y;
+    self
+  }
+
+  pub fn forward(&mut self, delta: f32) -> &mut Self {
+    self.move_center_global(self.up.cross(self.right) * delta)
   }
 
   pub fn get_camera(&self) -> Matrix4<f32> {
     Matrix4::look_at_rh(
-      self.look_at + self.r * self.right.cross(self.up),
-      self.look_at,
+      self.center + self.r * self.right.cross(self.up),
+      self.center,
       self.up,
     )
   }

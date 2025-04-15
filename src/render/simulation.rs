@@ -104,7 +104,7 @@ impl Default for SimulationParams {
       paused: false,
       draw_particles: false,
       draw_density_field: true,
-      move_particles: true
+      move_particles: true,
     }
   }
 }
@@ -304,7 +304,7 @@ pub mod two_d {
         height,
         width,
         opts,
-        params: Default::default()
+        params: Default::default(),
       };
 
       out
@@ -358,7 +358,7 @@ pub mod two_d {
       if self.params.move_particles {
         pass.set_pipeline(self.move_pipeline.as_ref().unwrap());
         pass.dispatch_workgroups(self.positions.cur().len() as u32, 1, 1);
-    }
+      }
     }
 
     fn setup_groups_for_compute(
@@ -488,7 +488,7 @@ pub mod two_d {
           count: None,
         }],
       });
-      
+
       // PARAMETER BUFFER
       let params_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("SimParams bg layout"),
@@ -529,7 +529,7 @@ pub mod two_d {
           &grid_bg_layout,
           &self.positions.cur_layout(),
           self.cells.cur_layout(),
-          &params_layout
+          &params_layout,
         ],
         push_constant_ranges: &[],
       });
@@ -648,7 +648,7 @@ pub mod two_d {
       let grid_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Cell dimension buffer"),
         // u32<WIDTH> | u32<HEIGHT> | f32<SIDE> | f32<VMIN> | f32<VMAX>
-        size: 2 * std::mem::size_of::<u32>() as u64 +  3 * std::mem::size_of::<f32>() as u64,
+        size: 2 * std::mem::size_of::<u32>() as u64 + 3 * std::mem::size_of::<f32>() as u64,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
         mapped_at_creation: false,
       });
