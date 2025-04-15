@@ -14,7 +14,8 @@ struct VertexOutput {
 struct Global {
   size: vec2<f32>,
   time: f32,
-  dt: f32
+  dt: f32,
+  camera: mat4x4f
 };
 
 
@@ -124,7 +125,9 @@ fn vs_main(
         0.0,            0.0,      0.0
   ));
   
-  out.pos = vec4(world_to_clip * vec3(in.pos.x+d.x, in.pos.y+d.y, 1.0), 1.0);
+  // out.pos = vec4(world_to_clip * vec3(in.pos.x+d.x, in.pos.y+d.y, 1.0), 1.0);
+  out.pos = g.camera * vec4(in.pos.x + d.x, in.pos.y + d.y, 0.0, 1.0);
+  // out.pos = vec4(g.size.x/2 + d.x, g.size.y/2+d.y, 0.5, 1.0) * g.camera;
 
   out.particle_pos = in.pos;
   out.idx = in.idx;

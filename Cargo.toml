@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+cgmath = "0.18.0"
 eframe = {version = "0.31.1", features = ["wayland", "x11", "wgpu", "default_fonts"], default-features = false}
 egui = "0.31.1"
 egui-wgpu = { version = "0.31.1", features = ["wayland", "x11"] }

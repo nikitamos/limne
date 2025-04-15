@@ -1,6 +1,7 @@
 use bindings::{GLOBAL_BIND_LOC, GLOBAL_BIND_SIZE};
+use cgmath::{ortho, Matrix4, Vector4};
 use egui_wgpu::{CallbackTrait, RenderState};
-use std::num::NonZero;
+use std::{io::Read, num::NonZero};
 use wgpu::{
   BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
   BindGroupLayoutEntry, Buffer, BufferBinding, BufferDescriptor, BufferUsages, Device,
@@ -20,12 +21,25 @@ pub(super) struct PersistentState {
   viewport_buf: Buffer,
   size: egui::Vec2,
   format: TextureFormat,
+  camera: Matrix4<f32>,
 }
 
 pub mod bindings {
+  use cgmath::Matrix4;
+
   pub const GLOBAL_BIND_LOC: u32 = 0;
-  pub const GLOBAL_BIND_SIZE: u64 = 4u64 * std::mem::size_of::<f32>() as u64;
+  pub const GLOBAL_BIND_SIZE: u64 =
+    (4 * std::mem::size_of::<f32>() + std::mem::size_of::<Matrix4<f32>>()) as u64;
 }
+
+#[rustfmt::skip]
+pub const GL_TRANSFORM_TO_WGPU: Matrix4<f32> =
+  Matrix4::new(
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 0.5, 0.0,
+    0.0, 0.0, 0.5, 1.0
+);
 
 /// This structure is responsible for storing WGPU resources for the clear pass
 impl PersistentState {
@@ -98,6 +112,7 @@ impl PersistentState {
       global_layout,
       size: egui::Vec2::ZERO,
       format: *format, 
+      camera: cgmath::ortho(0.0, 200.0, 0.0, 400.0, 0.0, 30.0),
     }
   }
 
@@ -158,8 +173,11 @@ impl PersistentState {
       self.size = size;
       self.simulation.on_surface_resized(size, device);
       self
-        .simulation
-        .reinit_pipelines(&device, self.format, &self.global_layout);
+      .simulation
+      .reinit_pipelines(&device, self.format, &self.global_layout);
+      self.camera = GL_TRANSFORM_TO_WGPU * cgmath::ortho(0.,size.x, 0., size.y, 0., 1.0);
+      println!("Resize, new cam: !");
+      dbg!(&self.camera);
     }
   }
 
@@ -209,10 +227,19 @@ impl CallbackTrait for StateCallback {
       x: screen_descriptor.size_in_pixels[0] as f32,
       y: screen_descriptor.size_in_pixels[1] as f32,
     };
+
+    let camera = GL_TRANSFORM_TO_WGPU * ortho(0.0, size.x, 0.0, size.y, 0.0, 1.0);
+
+    let buf_vec: Vec<u8> = [size.x, size.y, self.time, self.dt]
+      .as_bytes_buffer()
+      .to_owned()
+      .into_iter()
+      .chain(camera.as_bytes_buffer().to_owned().into_iter())
+      .collect();
     queue.write_buffer(
       &state.viewport_buf,
       0,
-      [size.x, size.y, self.time, self.dt].as_bytes_buffer(),
+      &buf_vec,
     );
     let Some(state) = callback_resources.get_mut::<PersistentState>() else {
       unreachable!()

@@ -2,6 +2,7 @@ use core::slice;
 use std::ops::{Deref, DerefMut, Range};
 
 use crate::math::vector::NumVector3D;
+use cgmath::{Matrix, Matrix4, Vector4};
 use two_d::DefaultCell;
 use wgpu::{CommandBuffer, CommandEncoder, VertexBufferLayout};
 
@@ -25,6 +26,12 @@ struct ParticleVector<T: Copy>(Vec<NumVector3D<T>>);
 impl<T: Copy> From<Vec<NumVector3D<T>>> for ParticleVector<T> {
   fn from(value: Vec<NumVector3D<T>>) -> Self {
     Self(value)
+  }
+}
+
+impl AsBuffer for Matrix4<f32> {
+  fn as_bytes_buffer(&self) -> &[u8] {
+    unsafe { slice::from_raw_parts(self.as_ptr().cast(), std::mem::size_of::<Matrix4<f32>>()) }
   }
 }
 
