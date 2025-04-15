@@ -1,5 +1,5 @@
 use bindings::{GLOBAL_BIND_LOC, GLOBAL_BIND_SIZE};
-use cgmath::{ortho, Matrix4, Vector4};
+use cgmath::{ortho, perspective, Matrix4, Rad, Vector4};
 use egui_wgpu::{CallbackTrait, RenderState};
 use std::{io::Read, num::NonZero};
 use wgpu::{
@@ -21,7 +21,7 @@ pub(super) struct PersistentState {
   viewport_buf: Buffer,
   size: egui::Vec2,
   format: TextureFormat,
-  camera: Matrix4<f32>,
+  projection: Matrix4<f32>,
 }
 
 pub mod bindings {
@@ -112,7 +112,7 @@ impl PersistentState {
       global_layout,
       size: egui::Vec2::ZERO,
       format: *format, 
-      camera: cgmath::ortho(0.0, 200.0, 0.0, 400.0, 0.0, 30.0),
+      projection: cgmath::ortho(0.0, 200.0, 0.0, 400.0, 0.0, 30.0),
     }
   }
 
@@ -175,9 +175,9 @@ impl PersistentState {
       self
       .simulation
       .reinit_pipelines(&device, self.format, &self.global_layout);
-      self.camera = GL_TRANSFORM_TO_WGPU * cgmath::ortho(0.,size.x, 0., size.y, 0., 1.0);
+      self.projection = GL_TRANSFORM_TO_WGPU * cgmath::ortho(0.,size.x, 0., size.y, 0., 1000.0);
       println!("Resize, new cam: !");
-      dbg!(&self.camera);
+      dbg!(&self.projection);
     }
   }
 
@@ -196,6 +196,7 @@ pub(crate) struct StateCallback {
   pub regen_opts: Option<SimulationRegenOptions>,
   pub regen_pos: bool,
   pub params: SimulationParams,
+  pub camera: Matrix4<f32>,
 }
 
 impl CallbackTrait for StateCallback {
@@ -228,19 +229,20 @@ impl CallbackTrait for StateCallback {
       y: screen_descriptor.size_in_pixels[1] as f32,
     };
 
-    let camera = GL_TRANSFORM_TO_WGPU * ortho(0.0, size.x, 0.0, size.y, 0.0, 1.0);
+    let projection = state.projection * self.camera;
 
     let buf_vec: Vec<u8> = [size.x, size.y, self.time, self.dt]
       .as_bytes_buffer()
       .to_owned()
       .into_iter()
-      .chain(camera.as_bytes_buffer().to_owned().into_iter())
+      .chain(projection.as_bytes_buffer().to_owned().into_iter())
       .collect();
     queue.write_buffer(
       &state.viewport_buf,
       0,
       &buf_vec,
     );
+
     let Some(state) = callback_resources.get_mut::<PersistentState>() else {
       unreachable!()
     };

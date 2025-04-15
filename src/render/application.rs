@@ -3,7 +3,10 @@ use eframe::CreationContext;
 use egui::{Button, Color32, Grid, Rect, Sense};
 use std::time::Instant;
 
-use super::simulation::{SimulationParams, SimulationRegenOptions};
+use super::{
+  camera::CameraController,
+  simulation::{SimulationParams, SimulationRegenOptions},
+};
 
 pub struct App {
   time: Instant,
@@ -13,6 +16,7 @@ pub struct App {
   v_max: String,
   viewport_rect: Rect,
   params: SimulationParams,
+  controller: CameraController,
 }
 
 const K_RANGE: std::ops::RangeInclusive<f32> = 0.0..=100.0;
@@ -94,7 +98,10 @@ impl eframe::App for App {
     });
     egui::CentralPanel::default().show(ctx, |ui| {
       egui::Frame::canvas(ui.style()).show(ui, |ui| {
-        let (rect, _) = ui.allocate_exact_size(ui.available_size(), Sense::empty());
+        let (rect, resp) = ui.allocate_exact_size(ui.available_size(), Sense::all());
+        let drag = resp.drag_motion() * 0.07;
+        self.controller.handle_drag(drag).get_camera();
+
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
           rect,
           StateCallback {
@@ -102,7 +109,8 @@ impl eframe::App for App {
             time: (time - self.startup_time).as_secs_f32(),
             regen_opts,
             regen_pos,
-            params: self.params
+            params: self.params,
+            camera: self.controller.get_camera()
           },
         ));
         self.viewport_rect = rect;
@@ -130,7 +138,8 @@ impl App {
       v_min: opts.vmin.to_string(),
       // Just a random rectangle
       viewport_rect: Rect::everything_above(0.0),
-      params: Default::default()
+      params: Default::default(),
+      controller: Default::default()
     }
   }
 }

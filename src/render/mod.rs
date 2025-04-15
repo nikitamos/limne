@@ -1,5 +1,5 @@
 pub mod application;
-mod shaders;
+mod camera;
 pub mod simulation;
 mod state;
 pub mod swapchain;
