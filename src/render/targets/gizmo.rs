@@ -1,8 +1,6 @@
-use std::marker::PhantomData;
-
 use wgpu::{
   util::{BufferInitDescriptor, DeviceExt},
-  vertex_attr_array, Buffer, BufferUsages,
+  vertex_attr_array, BufferUsages,
 };
 
 use crate::render::{
@@ -19,7 +17,7 @@ pub struct Gizmo {
 pub const AXIS_VERTICES: [f32; 9] = [
   0.0,  5.0, 0.0,
   0.0, -5.0, 0.0,
-  120.0, 0.0, 0.0
+  100.0, 0.0, 0.0
 ];
 
 pub struct GizmoResources<'a> {

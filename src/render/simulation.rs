@@ -2,9 +2,9 @@ use core::slice;
 use std::ops::{Deref, DerefMut, Range};
 
 use crate::math::vector::NumVector3D;
-use cgmath::{Matrix, Matrix4};
+use cgmath::Matrix;
 use two_d::DefaultCell;
-use wgpu::{CommandBuffer, CommandEncoder, VertexBufferLayout};
+use wgpu::{CommandEncoder, VertexBufferLayout};
 
 use super::AsBuffer;
 
@@ -142,7 +142,7 @@ pub mod two_d {
   use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
     vertex_attr_array, BufferUsages, FragmentState, MultisampleState, PrimitiveState,
-    RenderPassColorAttachment, RenderPipelineDescriptor, ShaderStages,
+    RenderPipelineDescriptor, ShaderStages,
   };
 
   use crate::render::swapchain::{SwapBuffers, SwapBuffersDescriptor};

@@ -4,9 +4,8 @@ use egui_wgpu::{CallbackTrait, RenderState};
 use std::num::NonZero;
 use wgpu::{
   BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-  BindGroupLayoutEntry, Buffer, BufferBinding, BufferDescriptor, BufferUsages, Device,
-  PipelineLayoutDescriptor, RenderPipeline, RenderPipelineDescriptor, ShaderStages, TextureFormat,
-  VertexState,
+  BindGroupLayoutEntry, Buffer, BufferBinding, BufferDescriptor, BufferUsages, DepthBiasState,
+  ShaderStages, StencilState, TextureFormat, TextureUsages,
 };
 
 use crate::render::{
@@ -20,7 +19,6 @@ use super::{
 };
 
 pub(super) struct PersistentState {
-  clear_pipeline: RenderPipeline,
   simulation: two_d::DefaultSim,
   global_layout: BindGroupLayout,
   global_bind: BindGroup,
@@ -28,6 +26,8 @@ pub(super) struct PersistentState {
   size: egui::Vec2,
   format: TextureFormat,
   projection: Matrix4<f32>,
+  depth_texture: wgpu::Texture,
+  depth_state: wgpu::DepthStencilState,
   gizmo: Gizmo,
 }
 
@@ -99,7 +99,6 @@ impl PersistentState {
         }),
       }],
     });
-    let clear_pipeline = Self::create_pipeline(device, *format, &[&global_layout]);
 
     let gizmo = Gizmo::init(
       device,
@@ -111,8 +110,39 @@ impl PersistentState {
       format,
     );
 
+    let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+      label: Some("Depth texture"),
+      size: wgpu::Extent3d {
+        width: 128,
+        height: 128,
+        depth_or_array_layers: 1,
+      },
+      mip_level_count: 1,
+      sample_count: 1,
+      dimension: wgpu::TextureDimension::D2,
+      format: TextureFormat::Depth32Float,
+      usage: TextureUsages::RENDER_ATTACHMENT,
+      view_formats: &[TextureFormat::Depth32Float],
+    });
+
+    let depth_state = wgpu::DepthStencilState {
+      format: TextureFormat::Depth32FloatStencil8,
+      depth_write_enabled: true,
+      depth_compare: wgpu::CompareFunction::Less,
+      stencil: StencilState {
+        front: wgpu::StencilFaceState::IGNORE,
+        back: wgpu::StencilFaceState::IGNORE,
+        read_mask: 0,
+        write_mask: 0,
+      },
+      bias: DepthBiasState {
+        constant: 1,
+        slope_scale: 1.,
+        clamp: 1.0,
+      },
+    };
+
     Self {
-      clear_pipeline,
       simulation: DefaultSim::create_fully_initialized(
         32000,
         device,
@@ -130,59 +160,10 @@ impl PersistentState {
       size: egui::Vec2::ZERO,
       format: *format,
       projection: cgmath::ortho(0.0, 200.0, 0.0, 400.0, 0.0, 30.0),
-      gizmo
+      gizmo,
+      depth_texture,
+      depth_state
     }
-  }
-
-  fn create_pipeline(
-    device: &Device,
-    format: TextureFormat,
-    layouts: &[&BindGroupLayout],
-  ) -> RenderPipeline {
-    let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
-    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-      label: Some("Render pipeline layout"),
-      bind_group_layouts: layouts,
-      push_constant_ranges: &[],
-    });
-
-    device.create_render_pipeline(&RenderPipelineDescriptor {
-      label: Some("random pipeline"),
-      layout: Some(&pipeline_layout),
-      vertex: VertexState {
-        module: &shader,
-        entry_point: Some("vs_main"),
-        buffers: &[],
-        compilation_options: Default::default(),
-      },
-      primitive: wgpu::PrimitiveState {
-        topology: wgpu::PrimitiveTopology::TriangleList,
-        strip_index_format: None,
-        front_face: wgpu::FrontFace::Ccw,
-        cull_mode: Some(wgpu::Face::Back),
-        polygon_mode: wgpu::PolygonMode::Fill,
-        unclipped_depth: false,
-        conservative: false,
-      },
-      depth_stencil: None,
-      multisample: wgpu::MultisampleState {
-        count: 1,
-        mask: !0,
-        alpha_to_coverage_enabled: false,
-      },
-      fragment: Some(wgpu::FragmentState {
-        module: &shader,
-        entry_point: Some("fs_main"),
-        targets: &[Some(wgpu::ColorTargetState {
-          format,
-          blend: Some(wgpu::BlendState::REPLACE),
-          write_mask: wgpu::ColorWrites::ALL,
-        })],
-        compilation_options: wgpu::PipelineCompilationOptions::default(),
-      }),
-      multiview: None,
-      cache: None,
-    })
   }
 
   pub fn resize(&mut self, size: egui::Vec2, device: &wgpu::Device) {
