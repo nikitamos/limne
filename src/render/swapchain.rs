@@ -5,7 +5,7 @@ use wgpu::{
   Device, Queue, ShaderStages,
 };
 
-use super::simulation::AsBuffer;
+use super::AsBuffer;
 
 pub struct SwapBuffers<T> {
   buf: [Buffer; 2],

@@ -11,7 +11,7 @@ use wgpu::{
 
 use crate::render::simulation::two_d::DefaultSim;
 
-use super::simulation::{two_d, AsBuffer, Simulation, SimulationParams, SimulationRegenOptions};
+use super::{AsBuffer, simulation::{two_d, Simulation, SimulationParams, SimulationRegenOptions}};
 
 pub(super) struct PersistentState {
   clear_pipeline: RenderPipeline,
@@ -44,7 +44,7 @@ pub const GL_TRANSFORM_TO_WGPU: Matrix4<f32> =
 /// This structure is responsible for storing WGPU resources for the clear pass
 impl PersistentState {
   pub fn update(&mut self, dt: f32, total: f32) {
-    self.simulation.step(dt);
+    // TODO: kill
   }
   pub fn create(rstate: &RenderState, opts: SimulationRegenOptions) -> Self {
     let RenderState {
@@ -128,7 +128,6 @@ impl PersistentState {
       push_constant_ranges: &[],
     });
 
-    
     device.create_render_pipeline(&RenderPipelineDescriptor {
       label: Some("random pipeline"),
       layout: Some(&pipeline_layout),

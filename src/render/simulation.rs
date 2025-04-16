@@ -6,9 +6,7 @@ use cgmath::{Matrix, Matrix4};
 use two_d::DefaultCell;
 use wgpu::{CommandBuffer, CommandEncoder, VertexBufferLayout};
 
-pub trait AsBuffer {
-  fn as_bytes_buffer(&self) -> &[u8];
-}
+use super::AsBuffer;
 
 #[rustfmt::skip]
 const SQUARE: [f32; 12] = [
@@ -29,12 +27,6 @@ impl<T: Copy> From<Vec<NumVector3D<T>>> for ParticleVector<T> {
   }
 }
 
-impl AsBuffer for Matrix4<f32> {
-  fn as_bytes_buffer(&self) -> &[u8] {
-    unsafe { slice::from_raw_parts(self.as_ptr().cast(), std::mem::size_of::<Matrix4<f32>>()) }
-  }
-}
-
 impl<T: Copy> Deref for ParticleVector<T> {
   type Target = Vec<NumVector3D<T>>;
 
@@ -52,12 +44,6 @@ impl<T: Copy> AsBuffer for ParticleVector<T> {
   fn as_bytes_buffer(&self) -> &[u8] {
     let item_size = std::mem::size_of::<NumVector3D<T>>();
     unsafe { slice::from_raw_parts(self.as_slice().as_ptr().cast(), self.len() * item_size) }
-  }
-}
-
-impl<const N: usize> AsBuffer for [f32; N] {
-  fn as_bytes_buffer(&self) -> &[u8] {
-    unsafe { slice::from_raw_parts(self.as_ptr().cast(), N * std::mem::size_of::<f32>()) }
   }
 }
 
@@ -121,10 +107,6 @@ impl AsBuffer for SimulationParams {
 }
 
 pub trait Simulation {
-  fn step(&mut self, dt: f32);
-  fn encoder_label<'a>(&self) -> Option<&'a str> {
-    Some("Simulation encoder")
-  }
   fn init_pipelines(
     &mut self,
     device: &wgpu::Device,
@@ -139,12 +121,6 @@ pub trait Simulation {
   ) {
     self.init_pipelines(device, format, global_layout);
   }
-  fn run_passes(
-    &mut self,
-    encoder: CommandEncoder,
-    global_bind_group: &wgpu::BindGroup,
-    view: &wgpu::TextureView,
-  ) -> CommandBuffer;
   fn write_buffers(&self, queue: &wgpu::Queue);
   fn on_surface_resized(&mut self, size: egui::Vec2, device: &wgpu::Device);
 }
@@ -263,8 +239,6 @@ pub mod two_d {
           cells[y_cells * (j + 1) - 1].velocity.x = 0.;
         }
       }
-
-      
 
       Self {
         positions: SwapBuffers::init_with(
@@ -437,37 +411,6 @@ pub mod two_d {
   };
 
   impl Simulation for DefaultSim {
-    fn step(&mut self, _dt: f32) {}
-
-    fn run_passes(
-      &mut self,
-      mut encoder: wgpu::CommandEncoder,
-      global_bind_group: &wgpu::BindGroup,
-      view: &wgpu::TextureView,
-    ) -> wgpu::CommandBuffer {
-      self.compute(&mut encoder, global_bind_group);
-
-      {
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-          label: None,
-          color_attachments: &[Some(RenderPassColorAttachment {
-            view,
-            resolve_target: None,
-            ops: wgpu::Operations {
-              load: wgpu::LoadOp::Load,
-              store: wgpu::StoreOp::Store,
-            },
-          })],
-          depth_stencil_attachment: None,
-          timestamp_writes: None,
-          occlusion_query_set: None,
-        });
-        pass.set_pipeline(self.pipeline.as_ref().unwrap());
-        self.render_into_pass(global_bind_group, &mut pass);
-      }
-      encoder.finish()
-    }
-
     fn init_pipelines(
       &mut self,
       device: &wgpu::Device,

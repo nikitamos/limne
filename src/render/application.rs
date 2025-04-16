@@ -5,7 +5,7 @@ use egui::{Button, Color32, Grid, Key, Rect, Sense};
 use std::time::Instant;
 
 use super::{
-  camera::{CameraController},
+  camera::CameraController,
   simulation::{SimulationParams, SimulationRegenOptions},
 };
 
@@ -129,7 +129,8 @@ impl eframe::App for App {
         }
         if right {
           delta.y += 1.0;
-        } if left {
+        }
+        if left {
           delta.y -= 1.0;
         }
         if delta != zero() {
