@@ -1,7 +1,7 @@
 use bindings::{GLOBAL_BIND_LOC, GLOBAL_BIND_SIZE};
 use cgmath::Matrix4;
 use egui_wgpu::{CallbackTrait, RenderState};
-use std::{io::Read, num::NonZero};
+use std::num::NonZero;
 use wgpu::{
   BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
   BindGroupLayoutEntry, Buffer, BufferBinding, BufferDescriptor, BufferUsages, Device,
@@ -9,9 +9,15 @@ use wgpu::{
   VertexState,
 };
 
-use crate::render::simulation::two_d::DefaultSim;
+use crate::render::{
+  render_target::RenderTarget, simulation::two_d::DefaultSim, targets::gizmo::GizmoResources,
+};
 
-use super::{AsBuffer, simulation::{two_d, Simulation, SimulationParams, SimulationRegenOptions}};
+use super::{
+  simulation::{two_d, Simulation, SimulationParams, SimulationRegenOptions},
+  targets::gizmo::Gizmo,
+  AsBuffer,
+};
 
 pub(super) struct PersistentState {
   clear_pipeline: RenderPipeline,
@@ -22,6 +28,7 @@ pub(super) struct PersistentState {
   size: egui::Vec2,
   format: TextureFormat,
   projection: Matrix4<f32>,
+  gizmo: Gizmo,
 }
 
 pub mod bindings {
@@ -94,6 +101,16 @@ impl PersistentState {
     });
     let clear_pipeline = Self::create_pipeline(device, *format, &[&global_layout]);
 
+    let gizmo = Gizmo::init(
+      device,
+      &rstate.queue,
+      &GizmoResources {
+        global_layout: &global_layout,
+        global_group: &global_bind,
+      },
+      format,
+    );
+
     Self {
       clear_pipeline,
       simulation: DefaultSim::create_fully_initialized(
@@ -113,6 +130,7 @@ impl PersistentState {
       size: egui::Vec2::ZERO,
       format: *format,
       projection: cgmath::ortho(0.0, 200.0, 0.0, 400.0, 0.0, 30.0),
+      gizmo
     }
   }
 
@@ -174,7 +192,7 @@ impl PersistentState {
       self
         .simulation
         .reinit_pipelines(device, self.format, &self.global_layout);
-      self.projection = GL_TRANSFORM_TO_WGPU * cgmath::ortho(0., size.x, 0., size.y, 0., 100000.0);
+      self.projection = GL_TRANSFORM_TO_WGPU * cgmath::ortho(-size.x/2., size.x/2., -size.y/2., size.y/2., 0., 100000.0);
     }
   }
 
@@ -207,6 +225,13 @@ impl CallbackTrait for StateCallback {
       unreachable!()
     };
     state.simulation.render_into_pass(&state.global_bind, pass);
+    state.gizmo.render_into_pass(
+      pass,
+      &GizmoResources {
+        global_group: &state.global_bind,
+        global_layout: &state.global_layout,
+      },
+    );
   }
 
   fn prepare(
@@ -253,8 +278,8 @@ impl CallbackTrait for StateCallback {
 
   fn finish_prepare(
     &self,
-    _device: &wgpu::Device,
-    _queue: &wgpu::Queue,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
     egui_encoder: &mut wgpu::CommandEncoder,
     callback_resources: &mut egui_wgpu::CallbackResources,
   ) -> Vec<wgpu::CommandBuffer> {
@@ -262,6 +287,9 @@ impl CallbackTrait for StateCallback {
       unreachable!()
     };
     state.simulation.compute(egui_encoder, &state.global_bind);
+    state
+      .gizmo
+      .update(device, queue, &state.global_bind, egui_encoder);
 
     Vec::new()
   }

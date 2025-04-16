@@ -1,5 +1,5 @@
 use crate::render::state::*;
-use cgmath::{num_traits::zero, InnerSpace, Vector2, Zero};
+use cgmath::{num_traits::zero, InnerSpace, Point3, Vector2, Zero};
 use eframe::CreationContext;
 use egui::{Button, Color32, Grid, Key, Rect, Sense};
 use std::time::Instant;
@@ -140,8 +140,8 @@ impl eframe::App for App {
         self
           .controller
           .handle_drag(drag)
-          // .look_at(Point3::new(rect.width() / 2., rect.height() / 2., 0.))
           .move_center_local(delta)
+          .look_at(Point3::new(0.0, 0.0, 0.0)) //-rect.width() / 2., -rect.height() / 2., 0.))
           .get_camera();
 
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(

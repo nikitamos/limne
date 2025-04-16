@@ -1,1 +1,1 @@
-mod gizmo;
+pub mod gizmo;
