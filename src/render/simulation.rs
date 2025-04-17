@@ -1,8 +1,7 @@
 use core::slice;
-use std::ops::{Deref, DerefMut, Range};
+use std::ops::{Deref, DerefMut};
 
 use crate::math::vector::NumVector3D;
-use cgmath::Matrix;
 use two_d::DefaultCell;
 use wgpu::{CommandEncoder, VertexBufferLayout};
 
@@ -45,11 +44,6 @@ impl<T: Copy> AsBuffer for ParticleVector<T> {
     let item_size = std::mem::size_of::<NumVector3D<T>>();
     unsafe { slice::from_raw_parts(self.as_slice().as_ptr().cast(), self.len() * item_size) }
   }
-}
-
-pub enum ValueRegenOptions {
-  Range(Range<f32>),
-  Constant(f32),
 }
 
 #[derive(Clone, Copy)]
@@ -106,25 +100,6 @@ impl AsBuffer for SimulationParams {
   }
 }
 
-pub trait Simulation {
-  fn init_pipelines(
-    &mut self,
-    device: &wgpu::Device,
-    format: wgpu::TextureFormat,
-    global_layout: &wgpu::BindGroupLayout,
-  );
-  fn reinit_pipelines(
-    &mut self,
-    device: &wgpu::Device,
-    format: wgpu::TextureFormat,
-    global_layout: &wgpu::BindGroupLayout,
-  ) {
-    self.init_pipelines(device, format, global_layout);
-  }
-  fn write_buffers(&self, queue: &wgpu::Queue);
-  fn on_surface_resized(&mut self, size: egui::Vec2, device: &wgpu::Device);
-}
-
 fn make_vec_buf<T>(v: &Vec<T>) -> &[u8] {
   unsafe { slice::from_raw_parts(v[..].as_ptr().cast(), v.len() * std::mem::size_of::<T>()) }
 }
@@ -141,11 +116,14 @@ pub mod two_d {
   use rayon::prelude::*;
   use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
-    vertex_attr_array, BufferUsages, FragmentState, MultisampleState, PrimitiveState,
-    RenderPipelineDescriptor, ShaderStages,
+    vertex_attr_array, BufferUsages, DepthStencilState, FragmentState, MultisampleState,
+    PrimitiveState, RenderPipelineDescriptor, ShaderStages,
   };
 
-  use crate::render::swapchain::{SwapBuffers, SwapBuffersDescriptor};
+  use crate::render::{
+    render_target::{ExternalResources, RenderTarget},
+    swapchain::{SwapBuffers, SwapBuffersDescriptor},
+  };
 
   use super::*;
 
@@ -167,6 +145,21 @@ pub mod two_d {
     }
   }
 
+  pub struct SimResources<'a> {
+    pub params: &'a SimulationParams,
+    pub global_group: &'a wgpu::BindGroup,
+    pub global_layout: &'a wgpu::BindGroupLayout,
+    pub regen_options: Option<SimulationRegenOptions>,
+  }
+
+  pub struct SimInit<'a> {
+    pub count: usize,
+    pub size: egui::Vec2,
+    pub depth_state: &'a wgpu::DepthStencilState,
+  }
+
+  impl<'a> ExternalResources<'a> for SimResources<'a> {}
+
   pub struct DefaultSim {
     positions: SwapBuffers<ParticleVector<f32>>,
     cells: SwapBuffers<Vec<DefaultCell>>,
@@ -187,6 +180,47 @@ pub mod two_d {
     params: SimulationParams,
   }
 
+  const DEFSIM_BUFFER_LAYOUT: VertexBufferLayout = VertexBufferLayout {
+    array_stride: 3 * std::mem::size_of::<f32>() as u64,
+    step_mode: wgpu::VertexStepMode::Instance,
+    attributes: &vertex_attr_array![0 => Float32x3],
+  };
+
+  impl<'a> RenderTarget<'a> for DefaultSim {
+    type Resources = SimResources<'a>;
+    type InitResources = SimInit<'a>;
+
+    fn init(
+      device: &wgpu::Device,
+      _queue: &wgpu::Queue,
+      resources: &'a Self::Resources,
+      format: &wgpu::TextureFormat,
+      init_res: Self::InitResources,
+    ) -> Self {
+      Self::create_fully_initialized(
+        init_res.count,
+        device,
+        init_res.size,
+        *format,
+        resources.global_layout,
+        resources.regen_options.unwrap(),
+        init_res.depth_state,
+      )
+    }
+
+    fn update(
+      &mut self,
+      device: &wgpu::Device,
+      queue: &wgpu::Queue,
+      global: &'a Self::Resources,
+      encoder: &mut wgpu::CommandEncoder,
+    ) {
+      todo!()
+    }
+
+    fn render_into_pass(&self, pass: &mut wgpu::RenderPass, resources: &'a Self::Resources) {}
+  }
+
   impl DefaultSim {
     pub fn create_fully_initialized(
       count: usize,
@@ -195,9 +229,10 @@ pub mod two_d {
       format: wgpu::TextureFormat,
       global_layout: &wgpu::BindGroupLayout,
       opts: SimulationRegenOptions,
+      depth: &DepthStencilState,
     ) -> Self {
       let mut out = Self::new(count, device, size, opts);
-      out.init_pipelines(device, format, global_layout);
+      out.init_pipelines(device, format, global_layout, depth);
       out
     }
     pub fn new(
@@ -399,23 +434,17 @@ pub mod two_d {
         device,
       );
     }
+    #[deprecated]
     pub fn set_params(&mut self, params: SimulationParams) {
       self.params = params;
     }
-  }
 
-  const DEFSIM_BUFFER_LAYOUT: VertexBufferLayout = VertexBufferLayout {
-    array_stride: 3 * std::mem::size_of::<f32>() as u64,
-    step_mode: wgpu::VertexStepMode::Instance,
-    attributes: &vertex_attr_array![0 => Float32x3],
-  };
-
-  impl Simulation for DefaultSim {
     fn init_pipelines(
       &mut self,
       device: &wgpu::Device,
       format: wgpu::TextureFormat,
       global_layout: &wgpu::BindGroupLayout,
+      depth_stencil: &DepthStencilState,
     ) {
       // CELL BINDING GROUP (for DRAWING & COMPUTE)
       let grid_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -521,7 +550,7 @@ pub mod two_d {
           polygon_mode: wgpu::PolygonMode::Fill,
           conservative: false,
         },
-        depth_stencil: None,
+        depth_stencil: Some(depth_stencil.clone()),
         multisample: MultisampleState {
           count: 1,
           mask: !0,
@@ -568,7 +597,7 @@ pub mod two_d {
           polygon_mode: wgpu::PolygonMode::Fill,
           conservative: false,
         },
-        depth_stencil: None,
+        depth_stencil: Some(depth_stencil.clone()),
         multisample: MultisampleState {
           count: 1,
           mask: !0,
@@ -622,7 +651,7 @@ pub mod two_d {
       self.square_buffer = Some(squarebuffer);
     }
 
-    fn write_buffers(&self, queue: &wgpu::Queue) {
+    pub fn write_buffers(&self, queue: &wgpu::Queue) {
       let celldims = (self.x_cells as u32, self.y_cells as u32);
       let a: Vec<_> = [celldims.0, celldims.1]
         .into_iter()
@@ -640,11 +669,21 @@ pub mod two_d {
       );
     }
 
-    fn on_surface_resized(&mut self, size: egui::Vec2, device: &wgpu::Device) {
+    pub fn on_surface_resized(&mut self, size: egui::Vec2, device: &wgpu::Device) {
       self.width = size.x;
       self.height = size.y;
       self.regenerate_positions(device);
       self.regenerate_grid(device, self.opts);
+    }
+    #[deprecated]
+    pub fn reinit_pipelines(
+      &mut self,
+      device: &wgpu::Device,
+      format: wgpu::TextureFormat,
+      global_layout: &wgpu::BindGroupLayout,
+      depth_stencil: &DepthStencilState,
+    ) {
+      self.init_pipelines(device, format, global_layout, depth_stencil);
     }
   }
 }

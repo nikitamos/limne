@@ -5,19 +5,19 @@ use std::num::NonZero;
 use wgpu::{
   BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
   BindGroupLayoutEntry, Buffer, BufferBinding, BufferDescriptor, BufferUsages, Color,
-  DepthBiasState, Operations, RenderPassColorAttachment, RenderPassDescriptor, ShaderStages,
-  StencilState, TextureFormat, TextureUsages,
+  DepthBiasState, Operations, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
+  RenderPassDescriptor, ShaderStages, StencilState, TextureFormat, TextureUsages,
 };
 
 use crate::render::{
   render_target::RenderTarget,
-  simulation::two_d::DefaultSim,
+  simulation::two_d::{DefaultSim, SimInit, SimResources},
   targets::{gizmo::GizmoResources, show_texture::TexDrawResources},
   texture_provider::TextureProviderDescriptor,
 };
 
 use super::{
-  simulation::{two_d, Simulation, SimulationParams, SimulationRegenOptions},
+  simulation::{two_d, SimulationParams, SimulationRegenOptions},
   targets::{gizmo::Gizmo, show_texture::TextureDrawer},
   texture_provider::TextureProvider,
   AsBuffer,
@@ -105,31 +105,23 @@ impl PersistentState {
       }],
     });
 
-    let gizmo = Gizmo::init(
-      device,
-      queue,
-      &GizmoResources {
-        global_layout: &global_layout,
-        global_group: &global_bind,
-      },
-      format,
-    );
-
-    let depth_texture = TextureProvider::new(&device,
+    let depth_texture = TextureProvider::new(
+      &device,
       TextureProviderDescriptor {
-      label:  Some("Depth texture".into()),
-      size: wgpu::Extent3d {
-        width: 128,
-        height: 128,
-        depth_or_array_layers: 1,
+        label: Some("Depth texture".into()),
+        size: wgpu::Extent3d {
+          width: 128,
+          height: 128,
+          depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: TextureFormat::Depth32Float,
+        usage: TextureUsages::RENDER_ATTACHMENT,
+        view_formats: vec![TextureFormat::Depth32Float],
       },
-      mip_level_count: 1,
-      sample_count: 1,
-      dimension: wgpu::TextureDimension::D2,
-      format: TextureFormat::Depth32Float,
-      usage: TextureUsages::RENDER_ATTACHMENT,
-      view_formats: vec![TextureFormat::Depth32Float],
-    });
+    );
     let target_texture = TextureProvider::new(
       &device,
       TextureProviderDescriptor {
@@ -155,10 +147,11 @@ impl PersistentState {
         texture: &target_texture,
       },
       format,
+      (),
     );
 
     let depth_state = wgpu::DepthStencilState {
-      format: TextureFormat::Depth32FloatStencil8,
+      format: TextureFormat::Depth32Float,
       depth_write_enabled: true,
       depth_compare: wgpu::CompareFunction::Less,
       stencil: StencilState {
@@ -168,23 +161,42 @@ impl PersistentState {
         write_mask: 0,
       },
       bias: DepthBiasState {
-        constant: 1,
-        slope_scale: 1.,
-        clamp: 1.0,
+        constant: 0,
+        slope_scale: 0.0,
+        clamp: 0.0,
       },
     };
+    let gizmo = Gizmo::init(
+      device,
+      queue,
+      &GizmoResources {
+        global_layout: &global_layout,
+        global_group: &global_bind,
+        depth_stencil: &depth_state,
+      },
+      format,
+      (),
+    );
 
     Self {
-      simulation: DefaultSim::create_fully_initialized(
-        32000,
+      simulation: DefaultSim::init(
         device,
-        egui::Vec2 {
-          x: 1200.0,
-          y: 800.0,
+        queue,
+        &SimResources {
+          params: &Default::default(),
+          global_group: &global_bind,
+          global_layout: &global_layout,
+          regen_options: Some(opts),
         },
-        *format,
-        &global_layout,
-        opts,
+        format,
+        SimInit {
+          count: 3200,
+          size: egui::Vec2 {
+            x: 1200.0,
+            y: 800.0,
+          },
+          depth_state: &depth_state,
+        },
       ),
       global_bind,
       viewport_buf,
@@ -196,7 +208,7 @@ impl PersistentState {
       target_texture,
       depth_texture,
       depth_state,
-      texture_drawer
+      texture_drawer,
     }
   }
 
@@ -207,15 +219,23 @@ impl PersistentState {
         width: size.x as u32,
         height: size.y as u32,
         depth_or_array_layers: 1,
-    };
+      };
       self.target_texture.resize(device, new_size);
       self.depth_texture.resize(device, new_size);
       self.simulation.on_surface_resized(size, device);
       self.texture_drawer.resized(device, &self.target_texture);
       self
         .simulation
-        .reinit_pipelines(device, self.format, &self.global_layout);
-      self.projection = GL_TRANSFORM_TO_WGPU * cgmath::ortho(-size.x/2., size.x/2., -size.y/2., size.y/2., 0., 100000.0);
+        .reinit_pipelines(device, self.format, &self.global_layout, &self.depth_state);
+      self.projection = GL_TRANSFORM_TO_WGPU
+        * cgmath::ortho(
+          -size.x / 2.,
+          size.x / 2.,
+          -size.y / 2.,
+          size.y / 2.,
+          0.,
+          100000.0,
+        );
     }
   }
 
@@ -324,7 +344,11 @@ impl CallbackTrait for StateCallback {
             store: wgpu::StoreOp::Store,
           },
         })],
-        depth_stencil_attachment: None,
+        depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+            view: &state.depth_texture,
+            depth_ops: Some(Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
+            stencil_ops: None,
+        }),
         timestamp_writes: None,
         occlusion_query_set: None,
       });
@@ -333,6 +357,7 @@ impl CallbackTrait for StateCallback {
         &GizmoResources {
           global_group: &state.global_bind,
           global_layout: &state.global_layout,
+          depth_stencil: &state.depth_state
         },
       );
       state

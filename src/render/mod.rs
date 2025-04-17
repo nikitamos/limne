@@ -26,3 +26,9 @@ impl<const N: usize> AsBuffer for [f32; N] {
     unsafe { slice::from_raw_parts(self.as_ptr().cast(), N * std::mem::size_of::<f32>()) }
   }
 }
+
+impl<const N: usize> AsBuffer for [u16; N] {
+  fn as_bytes_buffer(&self) -> &[u8] {
+    unsafe { slice::from_raw_parts(self.as_ptr().cast(), N * std::mem::size_of::<u16>()) }
+  }
+}

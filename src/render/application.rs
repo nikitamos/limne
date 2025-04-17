@@ -118,7 +118,7 @@ impl eframe::App for App {
             i.key_down(Key::S),
             i.key_down(Key::D),
             i.key_down(Key::A),
-            i.smooth_scroll_delta
+            i.smooth_scroll_delta,
           )
         });
         let mut delta = Vector2::<_>::zero();
@@ -141,8 +141,8 @@ impl eframe::App for App {
           .controller
           .handle_drag(drag)
           .move_center_local(delta)
-          .move_radius(scroll.y*-0.3);
-          // .look_at(Point3::new(0.0, 0.0, 0.0)) //-rect.width() / 2., -rect.height() / 2., 0.))
+          .move_radius(scroll.y * -0.3);
+        // .look_at(Point3::new(0.0, 0.0, 0.0)) //-rect.width() / 2., -rect.height() / 2., 0.))
 
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
           rect,

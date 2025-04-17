@@ -1,3 +1,5 @@
+use core::f32;
+
 use wgpu::{
   util::{BufferInitDescriptor, DeviceExt},
   vertex_attr_array, BufferUsages,
@@ -11,35 +13,52 @@ use crate::render::{
 pub struct Gizmo {
   pipeline: wgpu::RenderPipeline,
   vertex_buf: wgpu::Buffer,
+  index_buf: wgpu::Buffer,
 }
 
+const A: f32 = 10.0;
+const INNER_RADIUS: f32 = 0.5 * A * f32::consts::SQRT_3;
+
 #[rustfmt::skip]
-pub const AXIS_VERTICES: [f32; 9] = [
-  0.0,  5.0, 0.0,
-  0.0, -5.0, 0.0,
-  100.0, 0.0, 0.0
+const AXIS_VERTICES: [f32; 12] = [
+    0.0,      0.0,    INNER_RADIUS,
+    0.0,   -0.5 * A, -INNER_RADIUS,
+    0.0,   0.5 * A,  -INNER_RADIUS,
+  100.0,     0.0,         0.0
+];
+#[rustfmt::skip]
+const AXIS_INDICES: [u16; 6] = [
+  0, 1, 2,
+  3, 0, 1
 ];
 
 pub struct GizmoResources<'a> {
   pub global_layout: &'a wgpu::BindGroupLayout,
   pub global_group: &'a wgpu::BindGroup,
+  pub depth_stencil: &'a wgpu::DepthStencilState,
 }
 
 impl<'a> ExternalResources<'a> for GizmoResources<'a> {}
 
 impl<'a> RenderTarget<'a> for Gizmo {
-  type Resources<'r> = GizmoResources<'a>;
+  type Resources = GizmoResources<'a>;
 
-  fn init<'b>(
+  fn init(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    resources: &'b Self::Resources<'b>,
+    resources: &'a Self::Resources,
     format: &wgpu::TextureFormat,
+    _: Self::InitResources,
   ) -> Self {
     let vertex_buf = device.create_buffer_init(&BufferInitDescriptor {
       label: Some("Gizmo vertex buf"),
       contents: AXIS_VERTICES.as_bytes_buffer(),
       usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+    });
+    let index_buf = device.create_buffer_init(&BufferInitDescriptor {
+      label: Some("Gizmo index buf"),
+      contents: AXIS_INDICES.as_bytes_buffer(),
+      usage: BufferUsages::INDEX,
     });
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -63,7 +82,7 @@ impl<'a> RenderTarget<'a> for Gizmo {
         }],
       },
       primitive: wgpu::PrimitiveState {
-        topology: wgpu::PrimitiveTopology::TriangleList,
+        topology: wgpu::PrimitiveTopology::TriangleStrip,
         strip_index_format: None,
         front_face: wgpu::FrontFace::Ccw,
         cull_mode: None,
@@ -71,7 +90,7 @@ impl<'a> RenderTarget<'a> for Gizmo {
         polygon_mode: wgpu::PolygonMode::Fill,
         conservative: false,
       },
-      depth_stencil: None,
+      depth_stencil: Some(resources.depth_stencil.clone()),
       multisample: wgpu::MultisampleState {
         count: 1,
         mask: !0,
@@ -94,21 +113,24 @@ impl<'a> RenderTarget<'a> for Gizmo {
     Self {
       pipeline,
       vertex_buf,
+      index_buf,
     }
   }
 
-  fn render_into_pass<'b>(&self, pass: &mut wgpu::RenderPass, resources: &'b Self::Resources<'b>) {
+  fn render_into_pass(&self, pass: &mut wgpu::RenderPass, resources: &'a Self::Resources) {
     pass.set_pipeline(&self.pipeline);
     pass.set_vertex_buffer(0, self.vertex_buf.slice(..));
+    pass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint16);
     pass.set_bind_group(0, resources.global_group, &[]);
-    pass.draw(0..3, 0..3);
+    // pass.draw(0..3, 0..3);
+    pass.draw_indexed(0..6, 0, 0..3);
   }
 
-  fn update<'b>(
+  fn update(
     &mut self,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    global: &'b Self::Resources<'b>,
+    global: &'a Self::Resources,
     encoder: &mut wgpu::CommandEncoder,
   ) {
     // nop

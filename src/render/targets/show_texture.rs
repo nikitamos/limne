@@ -45,13 +45,14 @@ impl TextureDrawer {
 }
 
 impl<'a> RenderTarget<'a> for TextureDrawer {
-  type Resources<'r> = TexDrawResources<'a>;
+  type Resources = TexDrawResources<'a>;
 
   fn init<'b>(
     device: &wgpu::Device,
     _queue: &wgpu::Queue,
-    resources: &'b Self::Resources<'b>,
+    resources: &'a Self::Resources,
     format: &wgpu::TextureFormat,
+    _: Self::InitResources,
   ) -> Self {
     let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
       label: Some("TextureDrawer layout"),
@@ -147,13 +148,13 @@ impl<'a> RenderTarget<'a> for TextureDrawer {
     &mut self,
     _device: &wgpu::Device,
     _queue: &wgpu::Queue,
-    _res: &'b Self::Resources<'b>,
+    _res: &'b Self::Resources,
     _encoder: &mut wgpu::CommandEncoder,
   ) {
     //nop?
   }
 
-  fn render_into_pass<'b>(&self, pass: &mut wgpu::RenderPass, _resources: &'b Self::Resources<'b>) {
+  fn render_into_pass(&self, pass: &mut wgpu::RenderPass, _resources: &'a Self::Resources) {
     pass.set_pipeline(&self.pipeline);
     pass.set_bind_group(0, &self.bg, &[]);
     pass.draw(0..4, 0..1);

@@ -42,7 +42,9 @@ fn vs_main(in: Input) -> VertexOutput {
       1, 0., 0.
     );
   }
-  out.pos = g.camera * vec4(rotation * in.pos, 1.0);
+  var p = in.pos;
+  p.z = -in.pos.z;
+  out.pos = g.camera * vec4(rotation * p, 1.0);
   return out;
 }
 
