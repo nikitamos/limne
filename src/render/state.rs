@@ -4,17 +4,22 @@ use egui_wgpu::{CallbackTrait, RenderState};
 use std::num::NonZero;
 use wgpu::{
   BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-  BindGroupLayoutEntry, Buffer, BufferBinding, BufferDescriptor, BufferUsages, DepthBiasState,
-  ShaderStages, StencilState, TextureFormat, TextureUsages,
+  BindGroupLayoutEntry, Buffer, BufferBinding, BufferDescriptor, BufferUsages, Color,
+  DepthBiasState, Operations, RenderPassColorAttachment, RenderPassDescriptor, ShaderStages,
+  StencilState, TextureFormat, TextureUsages,
 };
 
 use crate::render::{
-  render_target::RenderTarget, simulation::two_d::DefaultSim, targets::gizmo::GizmoResources,
+  render_target::RenderTarget,
+  simulation::two_d::DefaultSim,
+  targets::{gizmo::GizmoResources, show_texture::TexDrawResources},
+  texture_provider::TextureProviderDescriptor,
 };
 
 use super::{
   simulation::{two_d, Simulation, SimulationParams, SimulationRegenOptions},
-  targets::gizmo::Gizmo,
+  targets::{gizmo::Gizmo, show_texture::TextureDrawer},
+  texture_provider::TextureProvider,
   AsBuffer,
 };
 
@@ -26,9 +31,11 @@ pub(super) struct PersistentState {
   size: egui::Vec2,
   format: TextureFormat,
   projection: Matrix4<f32>,
-  depth_texture: wgpu::Texture,
+  depth_texture: TextureProvider,
+  target_texture: TextureProvider,
   depth_state: wgpu::DepthStencilState,
   gizmo: Gizmo,
+  texture_drawer: TextureDrawer,
 }
 
 pub mod bindings {
@@ -50,14 +57,12 @@ pub const GL_TRANSFORM_TO_WGPU: Matrix4<f32> =
 
 /// This structure is responsible for storing WGPU resources for the clear pass
 impl PersistentState {
-  pub fn update(&mut self, dt: f32, total: f32) {
-    // TODO: kill
-  }
   pub fn create(rstate: &RenderState, opts: SimulationRegenOptions) -> Self {
     let RenderState {
       device,
       adapter,
       target_format: format,
+      queue,
       ..
     } = rstate;
 
@@ -102,7 +107,7 @@ impl PersistentState {
 
     let gizmo = Gizmo::init(
       device,
-      &rstate.queue,
+      queue,
       &GizmoResources {
         global_layout: &global_layout,
         global_group: &global_bind,
@@ -110,8 +115,9 @@ impl PersistentState {
       format,
     );
 
-    let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
-      label: Some("Depth texture"),
+    let depth_texture = TextureProvider::new(&device,
+      TextureProviderDescriptor {
+      label:  Some("Depth texture".into()),
       size: wgpu::Extent3d {
         width: 128,
         height: 128,
@@ -122,8 +128,34 @@ impl PersistentState {
       dimension: wgpu::TextureDimension::D2,
       format: TextureFormat::Depth32Float,
       usage: TextureUsages::RENDER_ATTACHMENT,
-      view_formats: &[TextureFormat::Depth32Float],
+      view_formats: vec![TextureFormat::Depth32Float],
     });
+    let target_texture = TextureProvider::new(
+      &device,
+      TextureProviderDescriptor {
+        label: Some("Target texture".to_owned()),
+        size: wgpu::Extent3d {
+          width: 10,
+          height: 10,
+          depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: *format,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+        view_formats: vec![*format],
+      },
+    );
+
+    let texture_drawer = TextureDrawer::init(
+      device,
+      queue,
+      &TexDrawResources {
+        texture: &target_texture,
+      },
+      format,
+    );
 
     let depth_state = wgpu::DepthStencilState {
       format: TextureFormat::Depth32FloatStencil8,
@@ -161,15 +193,25 @@ impl PersistentState {
       format: *format,
       projection: cgmath::ortho(0.0, 200.0, 0.0, 400.0, 0.0, 30.0),
       gizmo,
+      target_texture,
       depth_texture,
-      depth_state
+      depth_state,
+      texture_drawer
     }
   }
 
   pub fn resize(&mut self, size: egui::Vec2, device: &wgpu::Device) {
     if size.x > 0. && size.y > 0. {
       self.size = size;
+      let new_size = wgpu::Extent3d {
+        width: size.x as u32,
+        height: size.y as u32,
+        depth_or_array_layers: 1,
+    };
+      self.target_texture.resize(device, new_size);
+      self.depth_texture.resize(device, new_size);
       self.simulation.on_surface_resized(size, device);
+      self.texture_drawer.resized(device, &self.target_texture);
       self
         .simulation
         .reinit_pipelines(device, self.format, &self.global_layout);
@@ -205,12 +247,10 @@ impl CallbackTrait for StateCallback {
     let Some(state) = callback_resources.get::<PersistentState>() else {
       unreachable!()
     };
-    state.simulation.render_into_pass(&state.global_bind, pass);
-    state.gizmo.render_into_pass(
+    state.texture_drawer.render_into_pass(
       pass,
-      &GizmoResources {
-        global_group: &state.global_bind,
-        global_layout: &state.global_layout,
+      &TexDrawResources {
+        texture: &state.target_texture,
       },
     );
   }
@@ -268,9 +308,37 @@ impl CallbackTrait for StateCallback {
       unreachable!()
     };
     state.simulation.compute(egui_encoder, &state.global_bind);
-    state
-      .gizmo
-      .update(device, queue, &state.global_bind, egui_encoder);
+    {
+      let mut pass = egui_encoder.begin_render_pass(&RenderPassDescriptor {
+        label: Some("Target pass"),
+        color_attachments: &[Some(RenderPassColorAttachment {
+          view: &state.target_texture,
+          resolve_target: None,
+          ops: Operations {
+            load: wgpu::LoadOp::Clear(Color {
+              r: 0.5,
+              g: 0.5,
+              b: 0.5,
+              a: 0.5,
+            }),
+            store: wgpu::StoreOp::Store,
+          },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+      });
+      state.gizmo.render_into_pass(
+        &mut pass,
+        &GizmoResources {
+          global_group: &state.global_bind,
+          global_layout: &state.global_layout,
+        },
+      );
+      state
+        .simulation
+        .render_into_pass(&state.global_bind, &mut pass);
+    }
 
     Vec::new()
   }

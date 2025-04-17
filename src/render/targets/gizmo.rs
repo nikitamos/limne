@@ -4,7 +4,7 @@ use wgpu::{
 };
 
 use crate::render::{
-  render_target::{RenderTarget, SharedResources},
+  render_target::{ExternalResources, RenderTarget},
   AsBuffer,
 };
 
@@ -25,7 +25,7 @@ pub struct GizmoResources<'a> {
   pub global_group: &'a wgpu::BindGroup,
 }
 
-impl<'a> SharedResources<'a> for GizmoResources<'a> {}
+impl<'a> ExternalResources<'a> for GizmoResources<'a> {}
 
 impl<'a> RenderTarget<'a> for Gizmo {
   type Resources<'r> = GizmoResources<'a>;
@@ -97,20 +97,20 @@ impl<'a> RenderTarget<'a> for Gizmo {
     }
   }
 
-  fn update(
-    &mut self,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    global: &wgpu::BindGroup,
-    encoder: &mut wgpu::CommandEncoder,
-  ) {
-    // nop?
-  }
-
   fn render_into_pass<'b>(&self, pass: &mut wgpu::RenderPass, resources: &'b Self::Resources<'b>) {
     pass.set_pipeline(&self.pipeline);
     pass.set_vertex_buffer(0, self.vertex_buf.slice(..));
     pass.set_bind_group(0, resources.global_group, &[]);
     pass.draw(0..3, 0..3);
+  }
+
+  fn update<'b>(
+    &mut self,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    global: &'b Self::Resources<'b>,
+    encoder: &mut wgpu::CommandEncoder,
+  ) {
+    // nop
   }
 }

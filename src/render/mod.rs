@@ -9,6 +9,7 @@ pub mod simulation;
 mod state;
 pub mod swapchain;
 mod targets;
+pub mod texture_provider;
 
 pub trait AsBuffer {
   fn as_bytes_buffer(&self) -> &[u8];
