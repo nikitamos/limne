@@ -29,7 +29,7 @@ async fn create_wgpu_setup() -> WgpuSetup {
   let (device, queue) = adapter
     .request_device(
       &DeviceDescriptor {
-        required_features: Features::VERTEX_WRITABLE_STORAGE,
+        required_features: Features::VERTEX_WRITABLE_STORAGE | Features::POLYGON_MODE_LINE,
         required_limits: Limits {
           max_bind_groups: 5,
           ..Default::default()
@@ -49,7 +49,7 @@ async fn create_wgpu_setup() -> WgpuSetup {
   })
 }
 
-fn сотворить_создателя_приложенія<'a>() -> AppCreator<'a> {
+fn make_app_creator<'a>() -> AppCreator<'a> {
   Box::new(|cc| Ok(Box::new(App::new(cc))))
 }
 
@@ -66,5 +66,5 @@ async fn main() -> Result<(), eframe::Error> {
     },
     ..Default::default()
   };
-  eframe::run_native("org.m0sni.krusach2", opts, сотворить_создателя_приложенія())
+  eframe::run_native("org.m0sni.krusach2", opts, make_app_creator())
 }

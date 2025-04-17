@@ -153,7 +153,7 @@ impl PersistentState {
     let depth_state = wgpu::DepthStencilState {
       format: TextureFormat::Depth32Float,
       depth_write_enabled: true,
-      depth_compare: wgpu::CompareFunction::Less,
+      depth_compare: wgpu::CompareFunction::LessEqual,
       stencil: StencilState {
         front: wgpu::StencilFaceState::IGNORE,
         back: wgpu::StencilFaceState::IGNORE,
@@ -336,10 +336,10 @@ impl CallbackTrait for StateCallback {
           resolve_target: None,
           ops: Operations {
             load: wgpu::LoadOp::Clear(Color {
-              r: 0.5,
-              g: 0.5,
-              b: 0.5,
-              a: 0.5,
+              r: 1.0,
+              g: 1.0,
+              b: 1.0,
+              a: 1.0,
             }),
             store: wgpu::StoreOp::Store,
           },

@@ -58,3 +58,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     return vec4(0.0, 0.0, 1.0, 1.0);
   }
 }
+
+@fragment
+fn fs_outline() -> @location(0) vec4f {
+  return vec4f(0., 0., 0., 1.);
+}
