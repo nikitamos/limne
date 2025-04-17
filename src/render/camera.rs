@@ -2,14 +2,14 @@ use cgmath::{
   EuclideanSpace, Matrix4, Point3, Quaternion, Rad, Rotation, Rotation3, Vector2, Vector3,
 };
 
-pub struct CameraController {
+pub struct OrbitCameraController {
   center: Point3<f32>,
   right: Vector3<f32>,
   up: Vector3<f32>,
   r: f32,
 }
 
-impl Default for CameraController {
+impl Default for OrbitCameraController {
   fn default() -> Self {
     Self {
       center: Point3::origin(),
@@ -33,7 +33,7 @@ struct Projection {
   aspect: f32,
 }
 
-impl CameraController {
+impl OrbitCameraController {
   pub fn look_at(&mut self, point: Point3<f32>) -> &mut Self {
     self.center = point;
     self
@@ -50,6 +50,7 @@ impl CameraController {
     self
   }
 
+  #[must_use]
   pub fn get_pos(&mut self) -> Point3<f32> {
     self.center + self.right.cross(self.up) * self.r
   }
@@ -64,11 +65,15 @@ impl CameraController {
   }
 
   /// Moves center in local coordinates
-  /// X axis is facing to the center,
-  /// Y axis is facing to the 'right'
+  /// X axis is facing 'up',
+  /// Y axis is facing 'right'
   pub fn move_center_local(&mut self, delta: Vector2<f32>) -> &mut Self {
-    let r = self.up.cross(self.right);
-    self.center += r * delta.x + self.right * delta.y;
+    self.center += self.up * delta.x + self.right * delta.y;
+    self
+  }
+
+  pub fn move_radius(&mut self, dr: f32) -> &mut Self {
+    self.r += dr;
     self
   }
 
@@ -76,6 +81,7 @@ impl CameraController {
     self.move_center_global(self.up.cross(self.right) * delta)
   }
 
+  #[must_use]
   pub fn get_camera(&self) -> Matrix4<f32> {
     Matrix4::look_at_rh(
       self.center + self.r * self.right.cross(self.up),

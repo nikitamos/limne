@@ -5,7 +5,7 @@ use egui::{Button, Color32, Grid, Key, Rect, Sense};
 use std::time::Instant;
 
 use super::{
-  camera::CameraController,
+  camera::OrbitCameraController,
   simulation::{SimulationParams, SimulationRegenOptions},
 };
 
@@ -17,7 +17,7 @@ pub struct App {
   v_max: String,
   viewport_rect: Rect,
   params: SimulationParams,
-  controller: CameraController,
+  controller: OrbitCameraController,
 }
 
 const K_RANGE: std::ops::RangeInclusive<f32> = 0.0..=100.0;
@@ -112,12 +112,13 @@ impl eframe::App for App {
       egui::Frame::canvas(ui.style()).show(ui, |ui| {
         let (rect, resp) = ui.allocate_exact_size(ui.available_size(), Sense::all());
         let drag = resp.drag_motion() * 0.07;
-        let (fwd, back, right, left) = ui.input(|i| {
+        let (fwd, back, right, left, scroll) = ui.input(|i| {
           (
             i.key_down(Key::W),
             i.key_down(Key::S),
             i.key_down(Key::D),
             i.key_down(Key::A),
+            i.smooth_scroll_delta
           )
         });
         let mut delta = Vector2::<_>::zero();
@@ -136,13 +137,12 @@ impl eframe::App for App {
         if delta != zero() {
           delta = delta.normalize() * 2.0;
         }
-
         self
           .controller
           .handle_drag(drag)
           .move_center_local(delta)
-          .look_at(Point3::new(0.0, 0.0, 0.0)) //-rect.width() / 2., -rect.height() / 2., 0.))
-          .get_camera();
+          .move_radius(scroll.y*-0.3);
+          // .look_at(Point3::new(0.0, 0.0, 0.0)) //-rect.width() / 2., -rect.height() / 2., 0.))
 
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
           rect,
