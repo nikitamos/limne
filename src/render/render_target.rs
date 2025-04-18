@@ -1,4 +1,6 @@
-use wgpu::RenderPass;
+use std::sync::Arc;
+
+use wgpu::{CommandEncoderDescriptor, RenderPass, TextureFormat};
 
 pub trait ExternalResources<'a> {
   // fn update(&mut self, dt: f32, device: &wgpu::Device, queue: &wgpu::Queue) {}
@@ -10,29 +12,44 @@ pub trait ExternalResources<'a> {
 impl<'a> ExternalResources<'a> for () {}
 
 pub trait RenderTarget<'a> {
-  type Resources: ExternalResources<'a>;
+  type RenderResources: ExternalResources<'a>;
   type InitResources = ();
+  type UpdateResources = Self::RenderResources;
 
+  /// This function is used to create a valid instance of [`Self`]
   fn init(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    resources: &'a Self::Resources,
+    resources: &'a Self::RenderResources,
     format: &wgpu::TextureFormat,
     init_res: Self::InitResources,
   ) -> Self;
+  /// Run per-frame update
   fn update(
     &mut self,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    resources: &'a Self::Resources,
+    resources: &'a Self::UpdateResources,
     encoder: &mut wgpu::CommandEncoder,
   );
+  async fn update_async(
+    &mut self,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resources: &'a Self::UpdateResources,
+  ) -> wgpu::CommandBuffer {
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor { label: None });
+    self.update(device, queue, resources, &mut encoder);
+    encoder.finish()
+  }
+  /// This function is called when the render target texture is resized
   fn resized(
     &mut self,
     _device: &wgpu::Device,
     _new_size: egui::Vec2,
-    _resources: &'a Self::Resources,
+    _resources: &'a Self::UpdateResources,
+    _format: TextureFormat,
   ) {
   }
-  fn render_into_pass(&self, pass: &mut RenderPass, resources: &'a Self::Resources);
+  fn render_into_pass(&self, pass: &mut RenderPass, resources: &'a Self::RenderResources);
 }

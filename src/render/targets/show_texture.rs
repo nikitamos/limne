@@ -45,12 +45,12 @@ impl TextureDrawer {
 }
 
 impl<'a> RenderTarget<'a> for TextureDrawer {
-  type Resources = TexDrawResources<'a>;
+  type RenderResources = TexDrawResources<'a>;
 
   fn init<'b>(
     device: &wgpu::Device,
     _queue: &wgpu::Queue,
-    resources: &'a Self::Resources,
+    resources: &'a Self::RenderResources,
     format: &wgpu::TextureFormat,
     _: Self::InitResources,
   ) -> Self {
@@ -148,13 +148,13 @@ impl<'a> RenderTarget<'a> for TextureDrawer {
     &mut self,
     _device: &wgpu::Device,
     _queue: &wgpu::Queue,
-    _res: &'b Self::Resources,
+    _res: &'b Self::RenderResources,
     _encoder: &mut wgpu::CommandEncoder,
   ) {
     //nop?
   }
 
-  fn render_into_pass(&self, pass: &mut wgpu::RenderPass, _resources: &'a Self::Resources) {
+  fn render_into_pass(&self, pass: &mut wgpu::RenderPass, _resources: &'a Self::RenderResources) {
     pass.set_pipeline(&self.pipeline);
     pass.set_bind_group(0, &self.bg, &[]);
     pass.draw(0..4, 0..1);

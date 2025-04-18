@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use super::{
   camera::OrbitCameraController,
-  simulation::{SimulationParams, SimulationRegenOptions},
+  targets::simulation::{SimulationParams, SimulationRegenOptions},
 };
 
 pub struct App {

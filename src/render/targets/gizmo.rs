@@ -42,12 +42,12 @@ pub struct GizmoResources<'a> {
 impl<'a> ExternalResources<'a> for GizmoResources<'a> {}
 
 impl<'a> RenderTarget<'a> for Gizmo {
-  type Resources = GizmoResources<'a>;
+  type RenderResources = GizmoResources<'a>;
 
   fn init(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    resources: &'a Self::Resources,
+    resources: &'a Self::RenderResources,
     format: &wgpu::TextureFormat,
     _: Self::InitResources,
   ) -> Self {
@@ -160,7 +160,7 @@ impl<'a> RenderTarget<'a> for Gizmo {
     }
   }
 
-  fn render_into_pass(&self, pass: &mut wgpu::RenderPass, resources: &'a Self::Resources) {
+  fn render_into_pass(&self, pass: &mut wgpu::RenderPass, resources: &'a Self::RenderResources) {
     pass.set_pipeline(&self.pipeline);
     pass.set_vertex_buffer(0, self.vertex_buf.slice(..));
     pass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint16);
@@ -178,7 +178,7 @@ impl<'a> RenderTarget<'a> for Gizmo {
     &mut self,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    global: &'a Self::Resources,
+    global: &'a Self::RenderResources,
     encoder: &mut wgpu::CommandEncoder,
   ) {
     // nop

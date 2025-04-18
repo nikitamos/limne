@@ -5,7 +5,6 @@ use cgmath::{Matrix, Matrix4};
 pub mod application;
 mod camera;
 pub mod render_target;
-pub mod simulation;
 mod state;
 pub mod swapchain;
 mod targets;

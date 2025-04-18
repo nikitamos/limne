@@ -11,23 +11,21 @@ use wgpu::{
 
 use crate::render::{
   render_target::RenderTarget,
-  simulation::two_d::{DefaultSim, SimInit, SimResources},
-  targets::{gizmo::GizmoResources, show_texture::TexDrawResources},
+  targets::{gizmo::GizmoResources, show_texture::TexDrawResources, simulation::*},
   texture_provider::TextureProviderDescriptor,
 };
 
 use super::{
-  simulation::{two_d, SimulationParams, SimulationRegenOptions},
   targets::{gizmo::Gizmo, show_texture::TextureDrawer},
   texture_provider::TextureProvider,
   AsBuffer,
 };
 
 pub(super) struct PersistentState {
-  simulation: two_d::DefaultSim,
+  simulation: DefaultSim,
   global_layout: BindGroupLayout,
   global_bind: BindGroup,
-  viewport_buf: Buffer,
+  global_buf: Buffer,
   size: egui::Vec2,
   format: TextureFormat,
   projection: Matrix4<f32>,
@@ -72,7 +70,7 @@ impl PersistentState {
       adapter.get_info().backend.to_str().to_uppercase()
     );
 
-    let viewport_buf = device.create_buffer(&BufferDescriptor {
+    let global_buf = device.create_buffer(&BufferDescriptor {
       label: None,
       size: GLOBAL_BIND_SIZE,
       usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
@@ -98,7 +96,7 @@ impl PersistentState {
       entries: &[BindGroupEntry {
         binding: GLOBAL_BIND_LOC,
         resource: wgpu::BindingResource::Buffer(BufferBinding {
-          buffer: &viewport_buf,
+          buffer: &global_buf,
           offset: 0,
           size: NonZero::new(GLOBAL_BIND_SIZE),
         }),
@@ -150,7 +148,7 @@ impl PersistentState {
       (),
     );
 
-    let depth_state = wgpu::DepthStencilState {
+    let depth_stencil = wgpu::DepthStencilState {
       format: TextureFormat::Depth32Float,
       depth_write_enabled: true,
       depth_compare: wgpu::CompareFunction::LessEqual,
@@ -172,7 +170,7 @@ impl PersistentState {
       &GizmoResources {
         global_layout: &global_layout,
         global_group: &global_bind,
-        depth_stencil: &depth_state,
+        depth_stencil: &depth_stencil,
       },
       format,
       (),
@@ -187,6 +185,7 @@ impl PersistentState {
           global_group: &global_bind,
           global_layout: &global_layout,
           regen_options: Some(opts),
+          depth_stencil: &depth_stencil
         },
         format,
         SimInit {
@@ -195,11 +194,11 @@ impl PersistentState {
             x: 1200.0,
             y: 800.0,
           },
-          depth_state: &depth_state,
+          depth_state: &depth_stencil,
         },
       ),
       global_bind,
-      viewport_buf,
+      global_buf,
       global_layout,
       size: egui::Vec2::ZERO,
       format: *format,
@@ -207,33 +206,36 @@ impl PersistentState {
       gizmo,
       target_texture,
       depth_texture,
-      depth_state,
+      depth_state: depth_stencil,
       texture_drawer,
     }
   }
 
-  pub fn resize(&mut self, size: egui::Vec2, device: &wgpu::Device) {
+  fn resize(&mut self, size: egui::Vec2, device: &wgpu::Device, callback: &StateCallback) {
     if size.x > 0. && size.y > 0. {
       self.size = size;
-      let new_size = wgpu::Extent3d {
+      let new_tex_size = wgpu::Extent3d {
         width: size.x as u32,
         height: size.y as u32,
         depth_or_array_layers: 1,
       };
-      self.target_texture.resize(device, new_size);
-      self.depth_texture.resize(device, new_size);
-      self.simulation.on_surface_resized(size, device);
+      self.target_texture.resize(device, new_tex_size);
+      self.depth_texture.resize(device, new_tex_size);
+      self.simulation.resized(device, size, &SimUpdateResources {
+        params: &callback.params,
+        global_group: &self.global_bind,
+        global_layout: &self.global_layout,
+        depth_stencil: &self.depth_state,
+    }, self.format);
       self.texture_drawer.resized(device, &self.target_texture);
-      self
-        .simulation
-        .reinit_pipelines(device, self.format, &self.global_layout, &self.depth_state);
+      
       self.projection = GL_TRANSFORM_TO_WGPU
         * cgmath::ortho(
           -size.x / 2.,
           size.x / 2.,
           -size.y / 2.,
           size.y / 2.,
-          0.,
+          -1000.0,
           100000.0,
         );
     }
@@ -241,9 +243,14 @@ impl PersistentState {
 
   /// If `size` is different from stored internally,
   /// calls [`Self::resize`]
-  pub fn check_resize(&mut self, size: egui::Vec2, device: &wgpu::Device) {
+  pub fn check_resize(
+    &mut self,
+    size: egui::Vec2,
+    device: &wgpu::Device,
+    callback: &StateCallback,
+  ) {
     if size != self.size {
-      self.resize(size, device);
+      self.resize(size, device, callback);
     }
   }
 }
@@ -264,6 +271,7 @@ impl CallbackTrait for StateCallback {
     pass: &mut wgpu::RenderPass<'static>,
     callback_resources: &egui_wgpu::CallbackResources,
   ) {
+    // Renderig the target texture to the viewport goes here
     let Some(state) = callback_resources.get::<PersistentState>() else {
       unreachable!()
     };
@@ -280,54 +288,53 @@ impl CallbackTrait for StateCallback {
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     screen_descriptor: &egui_wgpu::ScreenDescriptor,
-    _encoder: &mut wgpu::CommandEncoder,
+    encoder: &mut wgpu::CommandEncoder,
     callback_resources: &mut egui_wgpu::CallbackResources,
   ) -> Vec<wgpu::CommandBuffer> {
-    // UPDATE/COMPUTE goes here?
-    let Some(state) = callback_resources.get::<PersistentState>() else {
+    // UPDATE goes here
+    let Some(state) = callback_resources.get_mut::<PersistentState>() else {
       unreachable!()
     };
     let size = egui::Vec2 {
       x: screen_descriptor.size_in_pixels[0] as f32,
       y: screen_descriptor.size_in_pixels[1] as f32,
     };
+    state.check_resize(size, device, self);
 
     let projection = state.projection * self.camera;
-
     let buf_vec: Vec<u8> = [size.x, size.y, self.time, self.dt]
       .as_bytes_buffer()
       .to_owned()
       .into_iter()
       .chain(projection.as_bytes_buffer().to_owned())
       .collect();
-    queue.write_buffer(&state.viewport_buf, 0, &buf_vec);
+    queue.write_buffer(&state.global_buf, 0, &buf_vec);
 
-    let Some(state) = callback_resources.get_mut::<PersistentState>() else {
-      unreachable!()
-    };
-    state.simulation.set_params(self.params);
-    state.check_resize(size, device);
-    if let Some(opts) = self.regen_opts {
-      state.simulation.regenerate_grid(device, opts);
-    }
-    if self.regen_pos {
-      state.simulation.regenerate_positions(device);
-    }
-    state.simulation.write_buffers(queue);
+    state.simulation.update(
+      device,
+      queue,
+      &SimUpdateResources {
+        params: &self.params,
+        depth_stencil: &state.depth_state,
+        global_group: &state.global_bind,
+        global_layout: &state.global_layout,
+      },
+      encoder,
+    );
     Vec::new()
   }
 
   fn finish_prepare(
     &self,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
+    _device: &wgpu::Device,
+    _queue: &wgpu::Queue,
     egui_encoder: &mut wgpu::CommandEncoder,
     callback_resources: &mut egui_wgpu::CallbackResources,
   ) -> Vec<wgpu::CommandBuffer> {
+    // Render to the `target_texture` goes here.
     let Some(state) = callback_resources.get_mut::<PersistentState>() else {
       unreachable!()
     };
-    state.simulation.compute(egui_encoder, &state.global_bind);
     {
       let mut pass = egui_encoder.begin_render_pass(&RenderPassDescriptor {
         label: Some("Target pass"),
@@ -335,12 +342,7 @@ impl CallbackTrait for StateCallback {
           view: &state.target_texture,
           resolve_target: None,
           ops: Operations {
-            load: wgpu::LoadOp::Clear(Color {
-              r: 1.0,
-              g: 1.0,
-              b: 1.0,
-              a: 1.0,
-            }),
+            load: wgpu::LoadOp::Clear(Color::WHITE),
             store: wgpu::StoreOp::Store,
           },
         })],
@@ -362,7 +364,13 @@ impl CallbackTrait for StateCallback {
       );
       state
         .simulation
-        .render_into_pass(&state.global_bind, &mut pass);
+        .render_into_pass(&mut pass, &SimResources {
+            params: &self.params,
+            global_group: &state.global_bind,
+            global_layout: &state.global_layout,
+            regen_options: self.regen_opts,
+            depth_stencil: &state.depth_state,
+        });
     }
 
     Vec::new()
