@@ -22,7 +22,7 @@ use super::{
 };
 
 pub(super) struct PersistentState {
-  simulation: DefaultSim,
+  simulation: SphSimulation,
   global_layout: BindGroupLayout,
   global_bind: BindGroup,
   global_buf: Buffer,
@@ -177,7 +177,7 @@ impl PersistentState {
     );
 
     Self {
-      simulation: DefaultSim::init(
+      simulation: SphSimulation::init(
         device,
         queue,
         &SimResources {
@@ -185,7 +185,7 @@ impl PersistentState {
           global_group: &global_bind,
           global_layout: &global_layout,
           regen_options: Some(opts),
-          depth_stencil: &depth_stencil
+          depth_stencil: &depth_stencil,
         },
         format,
         SimInit {
@@ -221,14 +221,20 @@ impl PersistentState {
       };
       self.target_texture.resize(device, new_tex_size);
       self.depth_texture.resize(device, new_tex_size);
-      self.simulation.resized(device, size, &SimUpdateResources {
-        params: &callback.params,
-        global_group: &self.global_bind,
-        global_layout: &self.global_layout,
-        depth_stencil: &self.depth_state,
-    }, self.format);
+      self.simulation.resized(
+        device,
+        size,
+        &SimUpdateResources {
+          params: &callback.params,
+          global_group: &self.global_bind,
+          global_layout: &self.global_layout,
+          depth_stencil: &self.depth_state,
+          dt: callback.dt,
+        },
+        self.format,
+      );
       self.texture_drawer.resized(device, &self.target_texture);
-      
+
       self.projection = GL_TRANSFORM_TO_WGPU
         * cgmath::ortho(
           -size.x / 2.,
@@ -259,7 +265,6 @@ pub(crate) struct StateCallback {
   pub dt: f32,
   pub time: f32,
   pub regen_opts: Option<SimulationRegenOptions>,
-  pub regen_pos: bool,
   pub params: SimulationParams,
   pub camera: Matrix4<f32>,
 }
@@ -318,6 +323,7 @@ impl CallbackTrait for StateCallback {
         depth_stencil: &state.depth_state,
         global_group: &state.global_bind,
         global_layout: &state.global_layout,
+        dt: self.dt,
       },
       encoder,
     );
@@ -347,9 +353,12 @@ impl CallbackTrait for StateCallback {
           },
         })],
         depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
-            view: &state.depth_texture,
-            depth_ops: Some(Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
-            stencil_ops: None,
+          view: &state.depth_texture,
+          depth_ops: Some(Operations {
+            load: wgpu::LoadOp::Clear(1.0),
+            store: wgpu::StoreOp::Store,
+          }),
+          stencil_ops: None,
         }),
         timestamp_writes: None,
         occlusion_query_set: None,
@@ -359,18 +368,19 @@ impl CallbackTrait for StateCallback {
         &GizmoResources {
           global_group: &state.global_bind,
           global_layout: &state.global_layout,
-          depth_stencil: &state.depth_state
+          depth_stencil: &state.depth_state,
         },
       );
-      state
-        .simulation
-        .render_into_pass(&mut pass, &SimResources {
-            params: &self.params,
-            global_group: &state.global_bind,
-            global_layout: &state.global_layout,
-            regen_options: self.regen_opts,
-            depth_stencil: &state.depth_state,
-        });
+      state.simulation.render_into_pass(
+        &mut pass,
+        &SimResources {
+          params: &self.params,
+          global_group: &state.global_bind,
+          global_layout: &state.global_layout,
+          regen_options: self.regen_opts,
+          depth_stencil: &state.depth_state,
+        },
+      );
     }
 
     Vec::new()

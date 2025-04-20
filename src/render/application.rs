@@ -1,5 +1,5 @@
 use crate::render::state::*;
-use cgmath::{num_traits::zero, InnerSpace, Point3, Vector2, Zero};
+use cgmath::{num_traits::zero, InnerSpace, Vector2, Zero};
 use eframe::CreationContext;
 use egui::{Button, Color32, Grid, Key, Rect, Sense};
 use std::time::Instant;
@@ -25,13 +25,12 @@ const M0_RANGE: std::ops::RangeInclusive<f32> = 0.0..=100.0;
 const NU_RANGE: std::ops::RangeInclusive<f32> = 0.0..=10.0;
 
 impl eframe::App for App {
-  fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+  fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
     let time = Instant::now();
     let dt = time - self.time;
     // self.state.update(dt.as_secs_f32(), (time - self.startup_time).as_secs_f32());
     self.time = time;
     let mut regen_opts = None;
-    let mut regen_pos = false;
 
     egui::SidePanel::left("simulation_props").show(ctx, |ui| {
       Grid::new("sim_props_grid").show(ui, |ui| {
@@ -52,8 +51,6 @@ impl eframe::App for App {
           ui.end_row();
         }
         ui.separator();
-        ui.end_row();
-        ui.checkbox(&mut self.params.draw_density_field, "Draw density field");
         ui.end_row();
         ui.checkbox(&mut self.params.draw_particles, "Draw particles");
         ui.end_row();
@@ -87,7 +84,7 @@ impl eframe::App for App {
           }
         })
       });
-      regen_pos = ui.button("Regen positions").clicked();
+      self.params.regen_particles = ui.button("Regen positions").clicked();
 
       ui.label(format!(
         "Viewport size: {}x{}",
@@ -96,13 +93,19 @@ impl eframe::App for App {
       ));
       ui.end_row();
       let camera_pos = self.controller.get_pos();
+      let camera_center = self.controller.get_center();
       ui.label(format!(
-        "Frame time: {:.2}ms, {:.0} FPS\n Camera at: ({:.1} {:.1} {:.1})`",
+        "Frame time: {:.2}ms, {:.0} FPS\nCamera at: ({:.1} {:.1} {:.1})
+Looks at: ({:.1}, {:.1}, {:.1})\nr={:.1}",
         dt.as_millis_f32(),
         1.0 / dt.as_secs_f32(),
         camera_pos.x,
         camera_pos.y,
-        camera_pos.z
+        camera_pos.z,
+        camera_center.x,
+        camera_center.y,
+        camera_center.z,
+        self.controller.get_radius()
       ));
       if ui.button("Reset camera").clicked() {
         self.controller.reset();
@@ -150,7 +153,6 @@ impl eframe::App for App {
             dt: dt.as_secs_f32(),
             time: (time - self.startup_time).as_secs_f32(),
             regen_opts,
-            regen_pos,
             params: self.params,
             camera: self.controller.get_camera(),
           },

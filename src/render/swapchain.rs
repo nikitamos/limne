@@ -1,20 +1,84 @@
+use std::ops::{Deref, DerefMut};
+
 use wgpu::{
   util::{BufferInitDescriptor, DeviceExt},
   BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-  BindGroupLayoutEntry, Buffer, BufferBinding, BufferBindingType, BufferUsages, CommandEncoder,
-  Device, Queue, ShaderStages,
+  BindGroupLayoutEntry, Buffer, BufferBinding, BufferBindingType, BufferDescriptor, BufferSize,
+  BufferUsages, CommandEncoder, Device, Queue, ShaderStages,
 };
 
 use super::AsBuffer;
 
+struct SwapBuffer<T> {
+  buf: Buffer,
+  data: T,
+  group: BindGroup,
+}
+
 pub struct SwapBuffers<T> {
-  buf: [Buffer; 2],
-  data: [T; 2],
-  group: [BindGroup; 2],
-  cur: usize,
+  cur: SwapBuffer<T>,
+  old: SwapBuffer<T>,
   layout: BindGroupLayout,
   desc: SwapBuffersDescriptor,
 }
+
+mod buf_guard {
+  use super::*;
+  pub struct BufGuard<'b, T>
+  where
+    T: Clone + AsBuffer,
+  {
+    bufs: &'b mut SwapBuffers<T>,
+    encoder: &'b mut CommandEncoder,
+    queue: &'b Queue,
+  }
+
+  impl<'b, T> BufGuard<'b, T>
+  where
+    T: Clone + AsBuffer,
+  {
+    pub fn new(
+      bufs: &'b mut SwapBuffers<T>,
+      encoder: &'b mut CommandEncoder,
+      queue: &'b Queue,
+    ) -> Self {
+      bufs.fetch(queue);
+      Self {
+        bufs,
+        encoder,
+        queue,
+      }
+    }
+  }
+
+  impl<T> Deref for BufGuard<'_, T>
+  where
+    T: Clone + AsBuffer,
+  {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+      &self.bufs.cur.data
+    }
+  }
+
+  impl<T> DerefMut for BufGuard<'_, T>
+  where
+    T: Clone + AsBuffer,
+  {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+      &mut self.bufs.cur.data
+    }
+  }
+
+  impl<T: Clone + AsBuffer> Drop for BufGuard<'_, T> {
+    fn drop(&mut self) {
+      todo!()
+    }
+  }
+}
+
+pub use buf_guard::BufGuard;
 
 pub struct SwapBuffersDescriptor {
   pub usage: BufferUsages,
@@ -28,51 +92,91 @@ impl<T: Clone + AsBuffer> SwapBuffers<T> {
     let layout = Self::create_bind_group_layout(dev, &desc);
     let (buf0, buf1, bg1, bg2) = Self::create_binding_groups(&state, dev, &desc, &layout);
     Self {
-      buf: [buf0, buf1],
-      data: [state.clone(), state],
-      group: [bg1, bg2],
-      cur: 0,
+      cur: SwapBuffer {
+        buf: buf0,
+        data: state.clone(),
+        group: bg1,
+      },
+      old: SwapBuffer {
+        buf: buf1,
+        data: state,
+        group: bg2,
+      },
       layout,
       desc,
     }
   }
   pub fn cur(&self) -> &T {
-    &self.data[self.cur]
+    &self.cur.data
   }
   pub fn old(&self) -> (&Buffer, &T) {
-    (&self.buf[1 - self.cur], &self.data[1 - self.cur])
+    (&self.old.buf, &self.old.data)
   }
   pub fn cur_buf(&self) -> &Buffer {
-    &self.buf[self.cur]
+    &self.cur.buf
   }
   pub fn swap(&mut self, encoder: &mut CommandEncoder) {
-    encoder.copy_buffer_to_buffer(self.cur_buf(), 0, self.old().0, 0, self.cur_size());
-    self.cur = 1 - self.cur;
+    encoder.copy_buffer_to_buffer(self.cur_buf(), 0, self.old().0, 0, self.cur_buf().size());
+    std::mem::swap(&mut self.cur, &mut self.old);
   }
-  pub fn cur_size(&self) -> u64 {
-    self.buf[self.cur].size()
+  #[must_use]
+  pub fn update<'a>(
+    &'a mut self,
+    queue: &'a Queue,
+    encoder: &'a mut CommandEncoder,
+  ) -> BufGuard<'a, T> {
+    BufGuard::new(self, encoder, queue)
   }
-  pub fn old_size(&self) -> u64 {
-    self.buf[1 - self.cur].size()
+
+  /// Fetches the current buffer from GPU.
+  /// The old buffer remains unchanged since it is considered immutable.
+  fn fetch(&mut self, q: &Queue) {
+    self
+      .cur_buf()
+      .slice(..)
+      .map_async(wgpu::MapMode::Read, |r| {
+        dbg!(r);
+      });
+    println!("Before submit");
+    q.submit([]);
+    println!("After submit");
+    let mr = self.cur_buf().slice(..).get_mapped_range();
+    self.cur_buf().unmap();
   }
-  pub fn write(&mut self, q: &mut Queue) {
-    q.write_buffer(self.cur_buf(), 0, self.data[self.cur].as_bytes_buffer());
+  /// Sends current buffer to the GPU.
+  fn send_cur(&self) {
+    todo!()
   }
+  fn swap_cur_to_old() {
+    todo!()
+  }
+
+  pub fn map_cpu_only<'r, U, F: FnOnce(&mut T, &T) -> U>(&'r mut self, map: F) -> U {
+    map(&mut self.cur.data, &self.old.data)
+  }
+
   pub fn cur_group(&self) -> &BindGroup {
-    &self.group[self.cur]
+    &self.cur.group
   }
-  pub fn cur_layout(&self) -> &BindGroupLayout {
+
+  pub fn layout(&self) -> &BindGroupLayout {
     &self.layout
   }
+  #[deprecated(note = "This does not work properly. Consider using [`Self::update`] instead")]
   pub fn reset(&mut self, new: T, device: &Device) {
     let (buf0, buf1, bg0, bg1) =
       Self::create_binding_groups(&new, device, &self.desc, &self.layout);
-    self.buf[0] = buf0;
-    self.buf[1] = buf1;
-    self.group[0] = bg0;
-    self.group[1] = bg1;
-    self.data[0] = new.clone();
-    self.data[1] = new;
+
+    self.cur = SwapBuffer {
+      buf: buf0,
+      data: new.clone(),
+      group: bg0,
+    };
+    self.old = SwapBuffer {
+      buf: buf1,
+      data: new,
+      group: bg1,
+    };
   }
 
   fn create_bind_group_layout(dev: &Device, desc: &SwapBuffersDescriptor) -> BindGroupLayout {
@@ -103,16 +207,19 @@ impl<T: Clone + AsBuffer> SwapBuffers<T> {
   ) -> (Buffer, Buffer, BindGroup, BindGroup) {
     let bytes = state.as_bytes_buffer();
     // "new"
-    let buf0 = dev.create_buffer_init(&BufferInitDescriptor {
-      label: None,
-      contents: bytes,
+    let buf0 = dev.create_buffer(&BufferDescriptor {
+      label: Some("new buf"),
+      size: bytes.len() as u64,
       usage: desc.usage,
+      mapped_at_creation: true,
     });
+    buf0.slice(..).get_mapped_range_mut().copy_from_slice(bytes);
+    buf0.unmap();
     // "old"
     let buf1 = dev.create_buffer_init(&BufferInitDescriptor {
-      label: None,
+      label: Some("old buf"),
       contents: bytes,
-      usage: desc.usage,
+      usage: BufferUsages::STORAGE | BufferUsages::MAP_READ | BufferUsages::COPY_DST,
     });
 
     // Create the BGs

@@ -22,19 +22,6 @@ impl Default for OrbitCameraController {
   }
 }
 
-#[repr(transparent)]
-pub struct Camera(Matrix4<f32>);
-impl Camera {
-  pub fn project_with(&self, proj: Projection) {
-    todo!()
-  }
-}
-
-struct Projection {
-  fov: f32,
-  aspect: f32,
-}
-
 impl OrbitCameraController {
   pub fn look_at(&mut self, point: Point3<f32>) -> &mut Self {
     self.center = point;
@@ -53,7 +40,14 @@ impl OrbitCameraController {
   }
 
   #[must_use]
-  pub fn get_pos(&mut self) -> Point3<f32> {
+  pub fn get_center(&self) -> Point3<f32> {
+    self.center
+  }
+  pub fn get_radius(&self) -> f32 {
+    self.r
+  }
+  #[must_use]
+  pub fn get_pos(&self) -> Point3<f32> {
     self.center + self.right.cross(self.up) * self.r
   }
   pub fn reset(&mut self) -> &mut Self {

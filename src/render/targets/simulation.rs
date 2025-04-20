@@ -1,47 +1,30 @@
-use core::slice;
-use std::ops::{Deref, DerefMut};
+use core::{f32, slice};
 
-use crate::math::vector::NumVector3D;
-use wgpu::VertexBufferLayout;
+use cgmath::{EuclideanSpace, Point3, Vector3, Zero};
+use rayon::prelude::*;
+use wgpu::{BufferDescriptor, VertexBufferLayout};
 
+use crate::math::sph_solver::{Particle, Solver};
 use crate::render::AsBuffer;
 
-#[rustfmt::skip]
-const SQUARE: [f32; 12] = [
-  0., 0.,
-  0., 1.,
-  1., 1.,
-  1., 0.,
-  0., 0.,
-  1., 1.,
-];
-
-#[derive(Clone)]
-struct ParticleVector<T: Copy>(Vec<NumVector3D<T>>);
-
-impl<T: Copy> From<Vec<NumVector3D<T>>> for ParticleVector<T> {
-  fn from(value: Vec<NumVector3D<T>>) -> Self {
-    Self(value)
-  }
-}
-
-impl<T: Copy> Deref for ParticleVector<T> {
-  type Target = Vec<NumVector3D<T>>;
-
-  fn deref(&self) -> &Self::Target {
-    &self.0
-  }
-}
-impl<T: Copy> DerefMut for ParticleVector<T> {
-  fn deref_mut(&mut self) -> &mut Self::Target {
-    &mut self.0
-  }
-}
-
-impl<T: Copy> AsBuffer for ParticleVector<T> {
+impl AsBuffer for Vec<Particle> {
   fn as_bytes_buffer(&self) -> &[u8] {
-    let item_size = std::mem::size_of::<NumVector3D<T>>();
-    unsafe { slice::from_raw_parts(self.as_slice().as_ptr().cast(), self.len() * item_size) }
+    unsafe {
+      slice::from_raw_parts(
+        self.as_ptr().cast(),
+        self.len() * std::mem::size_of::<Particle>(),
+      )
+    }
+  }
+}
+
+impl Default for Particle {
+  fn default() -> Self {
+    Self {
+      pos: Point3::origin(),
+      density: 1.0,
+      velocity: Vector3::zero(),
+    }
   }
 }
 
@@ -70,7 +53,7 @@ pub struct SimulationParams {
   pub viscosity: f32,
   pub paused: bool,
   pub draw_particles: bool,
-  pub draw_density_field: bool,
+  pub regen_particles: bool,
   pub move_particles: bool,
 }
 
@@ -81,8 +64,8 @@ impl Default for SimulationParams {
       m0: 0.01,
       viscosity: 0.0,
       paused: false,
-      draw_particles: false,
-      draw_density_field: true,
+      draw_particles: true,
+      regen_particles: false,
       move_particles: true,
     }
   }
@@ -99,45 +82,13 @@ impl AsBuffer for SimulationParams {
   }
 }
 
-fn make_vec_buf<T>(v: &Vec<T>) -> &[u8] {
-  unsafe { slice::from_raw_parts(v[..].as_ptr().cast(), v.len() * std::mem::size_of::<T>()) }
-}
-
-impl AsBuffer for Vec<DefaultCell> {
-  fn as_bytes_buffer(&self) -> &[u8] {
-    make_vec_buf(self)
-  }
-}
-
-use core::f32;
 use rand::Rng;
 use wgpu::{
   vertex_attr_array, BufferUsages, DepthStencilState, MultisampleState, RenderPipelineDescriptor,
   ShaderStages,
 };
 
-use crate::render::{
-  render_target::{ExternalResources, RenderTarget},
-  swapchain::{SwapBuffers, SwapBuffersDescriptor},
-};
-
-#[repr(C)]
-#[derive(Clone)]
-pub(super) struct DefaultCell {
-  pub velocity: NumVector3D<f32>,
-  pub pressure: f32,
-  pub density: f32,
-}
-
-impl Default for DefaultCell {
-  fn default() -> Self {
-    Self {
-      velocity: Default::default(),
-      pressure: Default::default(),
-      density: 2.0,
-    }
-  }
-}
+use crate::render::render_target::{ExternalResources, RenderTarget};
 
 pub struct SimResources<'a> {
   pub params: &'a SimulationParams,
@@ -152,6 +103,7 @@ pub struct SimUpdateResources<'a> {
   pub global_group: &'a wgpu::BindGroup,
   pub global_layout: &'a wgpu::BindGroupLayout,
   pub depth_stencil: &'a wgpu::DepthStencilState,
+  pub dt: f32,
 }
 
 pub struct SimInit<'a> {
@@ -162,23 +114,25 @@ pub struct SimInit<'a> {
 
 impl<'a> ExternalResources<'a> for SimResources<'a> {}
 
-pub struct DefaultSim {
-  positions: SwapBuffers<ParticleVector<f32>>,
+pub struct SphSimulation {
+  // positions: SwapBuffers<ParticleVector<f32>>,
+  pos_buf: Option<wgpu::Buffer>,
   pipeline: Option<wgpu::RenderPipeline>,
   params_buf: Option<wgpu::Buffer>,
   params_bg: Option<wgpu::BindGroup>,
   height: f32,
   width: f32,
   opts: SimulationRegenOptions,
+  solver: Solver,
 }
 
 const DEFSIM_BUFFER_LAYOUT: VertexBufferLayout = VertexBufferLayout {
-  array_stride: 3 * std::mem::size_of::<f32>() as u64,
+  array_stride: std::mem::size_of::<Particle>() as u64,
   step_mode: wgpu::VertexStepMode::Instance,
   attributes: &vertex_attr_array![0 => Float32x3],
 };
 
-impl<'a> RenderTarget<'a> for DefaultSim {
+impl<'a> RenderTarget<'a> for SphSimulation {
   type RenderResources = SimResources<'a>;
   type InitResources = SimInit<'a>;
   type UpdateResources = SimUpdateResources<'a>;
@@ -208,10 +162,17 @@ impl<'a> RenderTarget<'a> for DefaultSim {
     resources: &'a Self::UpdateResources,
     _encoder: &mut wgpu::CommandEncoder,
   ) {
-    self.write_buffers(queue, resources.params);
-    if !resources.params.paused {
+    if resources.params.paused {
+      return;
+    }
+    if resources.params.regen_particles {
       self.regenerate_positions(device);
     }
+
+    self
+      .solver
+      .update(resources.dt, resources.params.k, resources.params.m0, 1.0);
+    self.write_buffers(queue, resources.params);
   }
 
   fn resized(
@@ -224,7 +185,7 @@ impl<'a> RenderTarget<'a> for DefaultSim {
     self.width = new_size.x;
     self.height = new_size.y;
     self.regenerate_positions(device);
-    self.reinit_pipelines(
+    self.init_pipelines(
       device,
       format,
       &resources.global_layout,
@@ -235,15 +196,15 @@ impl<'a> RenderTarget<'a> for DefaultSim {
   fn render_into_pass(&self, pass: &mut wgpu::RenderPass, resources: &'a Self::RenderResources) {
     if resources.params.draw_particles {
       pass.set_pipeline(self.pipeline.as_ref().unwrap());
-      pass.set_vertex_buffer(0, self.positions.cur_buf().slice(..));
+      pass.set_vertex_buffer(0, self.pos_buf.as_ref().unwrap().slice(..));
       self.setup_groups_for_render(resources.global_group, pass);
-      pass.draw(0..3, 0..(self.positions.cur().len() as u32));
+      pass.draw(0..3, 0..(self.solver.particles().len() as u32));
     }
   }
 }
 
-impl DefaultSim {
-  pub fn create_fully_initialized(
+impl SphSimulation {
+  fn create_fully_initialized(
     count: usize,
     device: &wgpu::Device,
     size: egui::Vec2,
@@ -253,6 +214,7 @@ impl DefaultSim {
     depth: &DepthStencilState,
   ) -> Self {
     let mut out = Self::new(count, device, size, opts);
+    out.regenerate_positions(device);
     out.init_pipelines(device, format, global_layout, depth);
     out
   }
@@ -262,60 +224,25 @@ impl DefaultSim {
     size: egui::Vec2,
     opts: SimulationRegenOptions,
   ) -> Self {
-    let mut positions: Vec<NumVector3D<f32>> = vec![Default::default(); count];
+    let mut particles: Vec<Particle> = vec![Default::default(); count];
     let mut rng = rand::rng();
     let width = size.x;
     let height = size.y;
 
-    for p in positions.iter_mut() {
-      p.x = rng.sample(rand::distr::Uniform::new(0.0, width).unwrap());
-      p.y = rng.sample(rand::distr::Uniform::new(0.0, height).unwrap());
-    }
-
-    // Create cells
-    let x_cells = (2 * size.x as u32).div_ceil(opts.size as u32) as usize;
-    let y_cells = (2 * size.y as u32).div_ceil(opts.size as u32) as usize;
-
-    let mut cells = vec![DefaultCell::default(); x_cells * y_cells];
-    const VEL_BOUND: f32 = 70.0;
-    let distr = rand::distr::Uniform::new(0.0f32, f32::consts::TAU).unwrap();
-    for c in cells.iter_mut() {
-      let angle = rng.sample(distr);
-      c.velocity.x = angle.cos() * VEL_BOUND;
-      c.velocity.y = angle.sin() * VEL_BOUND;
-    }
-
-    for i in 0..y_cells {
-      cells[i].velocity.y = 0.0;
-      cells[(y_cells - 1) * x_cells - 1].velocity.y = 0.0;
-    }
-    for j in 0..x_cells {
-      {
-        cells[y_cells * j].velocity.x = 0.;
-        cells[y_cells * (j + 1) - 1].velocity.x = 0.;
-      }
+    for p in particles.iter_mut() {
+      p.pos.x = rng.sample(rand::distr::Uniform::new(0.0, width).unwrap());
+      p.pos.y = rng.sample(rand::distr::Uniform::new(0.0, height).unwrap());
     }
 
     Self {
-      positions: SwapBuffers::init_with(
-        positions.into(),
-        device,
-        SwapBuffersDescriptor {
-          usage: wgpu::BufferUsages::STORAGE
-            | wgpu::BufferUsages::COPY_DST
-            | wgpu::BufferUsages::COPY_SRC
-            | wgpu::BufferUsages::VERTEX,
-          visibility: ShaderStages::all(),
-          ty: wgpu::BufferBindingType::Storage { read_only: false },
-          has_dynamic_offset: false,
-        },
-      ),
+      pos_buf: None,
       pipeline: None,
       params_buf: None,
       params_bg: None,
       height,
       width,
       opts,
+      solver: Solver::new(0., 0., vec![Default::default(); count]),
     }
   }
 
@@ -328,25 +255,32 @@ impl DefaultSim {
   }
 
   fn regenerate_positions(&mut self, device: &wgpu::Device) {
-    let x_distr = rand::distr::Uniform::new(0.0, self.width).unwrap();
-    let y_distr = rand::distr::Uniform::new(0.0, self.height).unwrap();
-    self.positions.reset(
-      self
-        .positions
-        .cur()
-        .0
-        .clone()
-        .into_iter()
-        .map(|mut p| {
-          let mut rng = rand::rng();
-          p.x = rng.sample(x_distr);
-          p.y = rng.sample(y_distr);
-          p
-        })
-        .collect::<Vec<_>>()
-        .into(),
-      device,
-    );
+    let z_distr = rand::distr::Uniform::new(-75.0, 75.0).unwrap();
+    let x_distr = rand::distr::Uniform::new(-self.width / 2., self.width / 2.).unwrap();
+    let y_distr = rand::distr::Uniform::new(-self.height / 2., self.height / 2.).unwrap();
+
+    let v_distr = rand::distr::Uniform::new(0., 30.).unwrap();
+    let theta = rand::distr::Uniform::new(0., f32::consts::PI).unwrap();
+    let phi = rand::distr::Uniform::new(0., f32::consts::TAU).unwrap();
+
+    let mut parts = vec![Particle::default(); self.solver.len()];
+
+    parts.par_iter_mut().for_each(|p| {
+      let mut rng = rand::rng();
+      p.pos.x = rng.sample(x_distr);
+      p.pos.y = rng.sample(y_distr);
+      p.pos.z = rng.sample(z_distr);
+
+      let v = rng.sample(v_distr);
+      let theta = rng.sample(theta);
+      let phi = rng.sample(phi);
+      p.velocity = Vector3 {
+        x: v * theta.sin() * phi.cos(),
+        y: v * theta.sin() * phi.sin(),
+        z: v * theta.cos(),
+      }
+    });
+    self.solver.reset(parts);
   }
 
   fn init_pipelines(
@@ -388,6 +322,18 @@ impl DefaultSim {
         }),
       }],
     });
+
+    let pos_buf = device.create_buffer(&BufferDescriptor {
+      label: None,
+      size: self.solver.particles().as_bytes_buffer().len() as u64,
+      usage: BufferUsages::COPY_DST | BufferUsages::VERTEX,
+      mapped_at_creation: true,
+    });
+    pos_buf
+      .slice(..)
+      .get_mapped_range_mut()
+      .copy_from_slice(self.solver.particles().as_bytes_buffer());
+    pos_buf.unmap();
 
     // PARTICLE DRAWING (geometry)
 
@@ -440,7 +386,7 @@ impl DefaultSim {
     });
 
     self.pipeline = Some(pipeline);
-
+    self.pos_buf = Some(pos_buf);
     self.params_bg = Some(params_bg);
     self.params_buf = Some(params_buf);
   }
@@ -451,16 +397,10 @@ impl DefaultSim {
       0,
       params.as_bytes_buffer(),
     );
-  }
-
-  #[deprecated]
-  fn reinit_pipelines(
-    &mut self,
-    device: &wgpu::Device,
-    format: wgpu::TextureFormat,
-    global_layout: &wgpu::BindGroupLayout,
-    depth_stencil: &DepthStencilState,
-  ) {
-    self.init_pipelines(device, format, global_layout, depth_stencil);
+    queue.write_buffer(
+      self.pos_buf.as_ref().unwrap(),
+      0,
+      self.solver.particles().as_bytes_buffer(),
+    );
   }
 }

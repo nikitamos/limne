@@ -76,7 +76,7 @@ fn vs_main(
   }
 
   var out: VertexOutput;
-  out.pos = g.camera * vec4(in.pos.x + d.x, in.pos.y + d.y, 0.0, 1.0);
+  out.pos = g.camera * vec4(in.pos.x + d.x, in.pos.y + d.y, in.pos.z, 1.0);
 
   out.particle_pos = in.pos;
   out.idx = in.idx;
