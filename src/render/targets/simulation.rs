@@ -18,16 +18,6 @@ impl AsBuffer for Vec<Particle> {
   }
 }
 
-impl Default for Particle {
-  fn default() -> Self {
-    Self {
-      pos: Point3::origin(),
-      density: 1.0,
-      velocity: Vector3::zero(),
-    }
-  }
-}
-
 #[derive(Clone, Copy)]
 pub struct SimulationRegenOptions {
   pub size: f32,
@@ -51,6 +41,8 @@ pub struct SimulationParams {
   pub k: f32,
   pub m0: f32,
   pub viscosity: f32,
+  pub h: f32,
+  pub rho0: f32,
   pub paused: bool,
   pub draw_particles: bool,
   pub regen_particles: bool,
@@ -63,6 +55,8 @@ impl Default for SimulationParams {
       k: 0.3,
       m0: 0.01,
       viscosity: 0.0,
+      h: 10.0,
+      rho0: 3.0,
       paused: false,
       draw_particles: true,
       regen_particles: false,
@@ -162,16 +156,18 @@ impl<'a> RenderTarget<'a> for SphSimulation {
     resources: &'a Self::UpdateResources,
     _encoder: &mut wgpu::CommandEncoder,
   ) {
-    if resources.params.paused {
-      return;
-    }
     if resources.params.regen_particles {
       self.regenerate_positions(device);
     }
-
-    self
-      .solver
-      .update(resources.dt, resources.params.k, resources.params.m0, 1.0);
+    if !resources.params.paused {
+      self.solver.update(
+        resources.dt,
+        resources.params.k,
+        resources.params.m0,
+        resources.params.rho0,
+        resources.params.h,
+      );
+    }
     self.write_buffers(queue, resources.params);
   }
 

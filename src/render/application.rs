@@ -44,6 +44,14 @@ impl eframe::App for App {
         ui.add(egui::Slider::new(&mut self.params.viscosity, NU_RANGE));
         ui.end_row();
 
+        ui.label("h");
+        ui.add(egui::Slider::new(&mut self.params.h, 0.0f32..=40.0f32));
+        ui.end_row();
+
+        ui.label("ρ₀");
+        ui.add(egui::Slider::new(&mut self.params.rho0, 0.0f32..=10.0f32));
+        ui.end_row();
+
         ui.checkbox(&mut self.params.paused, "Paused");
         ui.end_row();
         if !self.params.paused {
