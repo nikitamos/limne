@@ -29,12 +29,13 @@ pub mod kernels {
     }
   }
   pub fn grad_spiky(r: Vector3<f32>, h: f32) -> Vector3<f32> {
-    if r.magnitude() == 0. {
+    if r.magnitude() >= h || r.magnitude() == 0. {
       Vector3::zero()
     } else {
-      15. / f32::consts::PI / cubed(h * h) * (h - r.magnitude()) * (h - r.magnitude())
-        / r.magnitude()
-        * r
+      -45. * (h - r.magnitude()).powi(2) / f32::consts::PI / h.powi(6) * r.normalize()
+      // 15. / f32::consts::PI / cubed(h * h) * (h - r.magnitude()) * (h - r.magnitude())
+      //   / r.magnitude()
+      //   * r
     }
   }
 }
@@ -134,26 +135,33 @@ impl Solver {
         let mut p = k * (rho - rho0);
         if p.is_nan() {
           println!("pressure is nan!");
+          0.
         } else {
           x.density = rho; //?
+          p
         }
-        p
       })
       .collect();
     // Normalize pressures for symmetry
     particles.par_iter_mut().enumerate().for_each(|(i, p)| {
       p.forces = Vector3::zero();
+      // p.forces.y = -0.25;
       for j in 0..pressures.len() {
-        p.forces -= 0.5 * (pressures[i] + pressures[j]) / p.density
-          * grad_spiky(p.pos - self.old_particles[i].pos, h);
-        if p.forces.x.is_nan() || p.forces.y.is_nan() || p.forces.z.is_nan() {
-          p.forces = Vector3::zero();
-          println!("Broken forces!");
-        } else {
-          p.forces = 10. * p.forces.normalize();
+        if i == j {
+          continue;
         }
-        p.forces.y += -2E-20;
+        p.forces -= 0.5 * (pressures[i] + pressures[j]) / p.density
+          * grad_spiky(p.pos - self.old_particles[j].pos, h);
       }
+
+      if p.forces.x.is_nan() || p.forces.y.is_nan() || p.forces.z.is_nan() {
+        println!("Force is broken!");
+        p.forces = Vector3::zero();
+      }
+      p.forces.y -= 2.0;
+      // if p.forces.magnitude2() != 0. {
+      //   println!("{:e}", p.forces.magnitude());
+      // }
     });
 
     // 2. Viscosity (temporarily 0/skip)
@@ -168,10 +176,10 @@ impl Solver {
       } else {
         println!("Density is nan");
       }
-      if x.pos.to_vec().magnitude2() > 400. * 400. {
+      if x.pos.to_vec().magnitude2() > 256. * 256. {
         let p = x.pos.to_vec();
-        x.pos = Point3::from_vec(p.normalize() * 400.);
-        x.velocity -= 2. * x.velocity.project_on(p);
+        x.pos = Point3::from_vec(p.normalize() * 256.);
+        x.velocity -= 1.86574 * x.velocity.project_on(p);
       }
     });
     self.particles = particles;

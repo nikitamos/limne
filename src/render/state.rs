@@ -235,6 +235,7 @@ impl PersistentState {
       );
       self.texture_drawer.resized(device, &self.target_texture);
 
+      let s = size.x.min(size.y);
       self.projection = GL_TRANSFORM_TO_WGPU
         * cgmath::ortho(
           -size.x / 2.,
@@ -242,7 +243,7 @@ impl PersistentState {
           -size.y / 2.,
           size.y / 2.,
           -1000.0,
-          100000.0,
+          10000.0,
         );
     }
   }
