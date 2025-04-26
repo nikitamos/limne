@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use wgpu::{CommandEncoderDescriptor, RenderPass, TextureFormat};
 
 pub trait ExternalResources<'a> {
@@ -18,12 +16,17 @@ pub trait RenderTarget<'a> {
 
   /// This function is used to create a valid instance of [`Self`]
   fn init(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    resources: &'a Self::RenderResources,
-    format: &wgpu::TextureFormat,
-    init_res: Self::InitResources,
-  ) -> Self;
+    _device: &wgpu::Device,
+    _queue: &wgpu::Queue,
+    _resources: &'a Self::RenderResources,
+    _format: &wgpu::TextureFormat,
+    _init_res: Self::InitResources,
+  ) -> Self
+  where
+    Self: Sized,
+  {
+    todo!()
+  }
   /// Run per-frame update
   fn update(
     &mut self,

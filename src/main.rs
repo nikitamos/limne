@@ -2,6 +2,7 @@
 #![feature(duration_millis_float)]
 #![feature(associated_type_defaults)]
 #![feature(more_float_constants)]
+#![feature(more_qualified_paths)]
 
 use eframe::{AppCreator, NativeOptions};
 use egui_wgpu::{WgpuConfiguration, WgpuSetup, WgpuSetupExisting};

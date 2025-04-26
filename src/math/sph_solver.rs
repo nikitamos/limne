@@ -33,20 +33,18 @@ pub mod kernels {
       Vector3::zero()
     } else {
       -45. * (h - r.magnitude()).powi(2) / f32::consts::PI / h.powi(6) * r.normalize()
-      // 15. / f32::consts::PI / cubed(h * h) * (h - r.magnitude()) * (h - r.magnitude())
-      //   / r.magnitude()
-      //   * r
     }
   }
 }
 
 #[derive(Clone, Debug)]
-#[repr(C)]
 pub struct Particle {
   pub pos: Point3<f32>,
   pub density: f32,
   pub velocity: Vector3<f32>,
+  _padding1: u32,
   forces: Vector3<f32>,
+  _padding2: u32,
 }
 
 impl Default for Particle {
@@ -55,7 +53,9 @@ impl Default for Particle {
       forces: Vector3::zero(),
       pos: Point3::origin(),
       density: 1.0,
+      _padding1: 0,
       velocity: Vector3::zero(),
+      _padding2: 0
     }
   }
 }

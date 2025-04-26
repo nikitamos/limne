@@ -1,0 +1,117 @@
+struct Particle {
+  pos: vec3<f32>,
+  density: f32,
+  velocity: vec3<f32>,
+  forces: vec3<f32>,
+}
+struct Global {
+  size: vec2<f32>,
+  time: f32,
+  dt: f32,
+  camera: mat4x4f,
+}
+struct SimParams {
+  k: f32,
+  m0: f32,
+  viscosity: f32,
+  h: f32,
+  rho0: f32,
+}
+
+@group(0) @binding(0)
+var<storage, read_write> cur_particles: array<Particle>;
+@group(0) @binding(1)
+var<storage, read_write> old_particles: array<Particle>;
+
+@group(1) @binding(0)
+var<storage, read_write> pressure: array<f32>;
+@group(1) @binding(1)
+var<storage, read> params: SimParams;
+
+@group(2) @binding(0)
+var<uniform> g: Global;
+
+const PI: f32 = 3.14159265358979;
+
+fn poly6(r: f32, h: f32) -> f32 {
+  if 0. <= r && r <= h {
+    return 315. / 64. / PI / pow(h, 9.) * pow(h * h - r * r, 3.);
+  }
+  return 0.;
+}
+
+fn grad_spiky(r: vec3f, h: f32) -> vec3f {
+  if length(r) >= h || length(r) == 0 {
+    return vec3(0.);
+  }
+  return -45. * pow(h - length(r), 2.) / PI / pow(h, 6.) * normalize(r);
+}
+
+
+fn intrp_density(at: vec3<f32>) -> f32 {
+  var sum: f32 = 0.0;
+  let els = arrayLength(&old_particles);
+  for (var i: u32 = 0; i < els; i += u32(1)) {
+    sum += poly6(distance(at, old_particles[i].pos), params.h);
+  }
+  sum *= params.m0;
+  return sum;
+}
+
+@compute @workgroup_size(1)
+fn density_pressure(@builtin(global_invocation_id) idx: vec3u) {
+  let num = idx.x;
+  // Density
+  let rho = clamp(intrp_density(old_particles[num].pos), -50. * params.rho0, 50. * params.rho0);
+  cur_particles[num].density = rho;
+  // Pressure
+  var p = params.k * (rho - params.rho0);
+  if p != p { // p is NaN
+    p = 0.;
+  }
+  pressure[num] = p;
+}
+
+@compute @workgroup_size(1)
+fn pressure_forces(@builtin(global_invocation_id) idx: vec3u) {
+  let i = idx.x;
+  let els = arrayLength(&pressure);
+  cur_particles[i].forces = vec3f(0.);
+  for (var j: u32 = 0; j < els; j += u32(1)) {
+    if (i == j) {
+      continue;
+    }
+    cur_particles[i].forces -= 0.5 * (pressure[i] + pressure[j]) / cur_particles[i].density
+      * grad_spiky(old_particles[i].pos - old_particles[j].pos, params.h);
+  }
+  // NaN
+  if length(cur_particles[i].forces) != length(cur_particles[i].forces) {
+    cur_particles[i].forces = vec3f(0.);
+  }
+  cur_particles[i].forces.y -= 2.0;
+}
+
+fn project_on(a: vec3f, direction: vec3f) -> vec3f {
+  return normalize(direction) * dot(a, direction) / length(direction);
+}
+
+@compute @workgroup_size(1)
+fn integrate_forces(@builtin(global_invocation_id) idx: vec3u) {
+  let i = idx.x;
+  let els = arrayLength(&pressure);
+  let a = cur_particles[i].forces / cur_particles[i].density;
+  
+  cur_particles[i].pos += g.dt * cur_particles[i].velocity + 0.5 * a * g.dt * g.dt;
+  cur_particles[i].velocity += g.dt * a;
+
+  // Out of bounds check
+  if length(cur_particles[i].pos) > 512. {
+    let p = cur_particles[i].pos;
+    cur_particles[i].pos = 512. * normalize(p);
+    cur_particles[i].velocity -= 1.5 * project_on(cur_particles[i].velocity, p);
+  }
+  if length(cur_particles[i].pos) != length(cur_particles[i].pos) {
+    cur_particles[i].pos = vec3f(0., 0., 0.);
+  }
+  // cur_particles[i].pos = vec3f(300., 300., 300.);
+}

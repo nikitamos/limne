@@ -1,10 +1,12 @@
 use core::{f32, slice};
 
-use cgmath::{EuclideanSpace, Point3, Vector3, Zero};
+use cgmath::Vector3;
 use rayon::prelude::*;
-use wgpu::{BufferDescriptor, VertexBufferLayout};
+use wgpu::VertexBufferLayout;
 
-use crate::math::sph_solver::{Particle, Solver};
+use crate::math::sph_solver::Particle;
+use crate::math::sph_solver_gpu::{SphSolverGpu, SphSolverGpuRenderResources};
+use crate::render::swapchain::{SwapBuffers, SwapBuffersDescriptor};
 use crate::render::AsBuffer;
 
 impl AsBuffer for Vec<Particle> {
@@ -110,14 +112,15 @@ impl<'a> ExternalResources<'a> for SimResources<'a> {}
 
 pub struct SphSimulation {
   // positions: SwapBuffers<ParticleVector<f32>>,
-  pos_buf: Option<wgpu::Buffer>,
+  pos_buf: Option<SwapBuffers<Vec<Particle>>>,
   pipeline: Option<wgpu::RenderPipeline>,
   params_buf: Option<wgpu::Buffer>,
   params_bg: Option<wgpu::BindGroup>,
   height: f32,
   width: f32,
   opts: SimulationRegenOptions,
-  solver: Solver,
+  count: usize,
+  solver: Option<SphSolverGpu>,
 }
 
 const DEFSIM_BUFFER_LAYOUT: VertexBufferLayout = VertexBufferLayout {
@@ -154,19 +157,18 @@ impl<'a> RenderTarget<'a> for SphSimulation {
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     resources: &'a Self::UpdateResources,
-    _encoder: &mut wgpu::CommandEncoder,
+    encoder: &mut wgpu::CommandEncoder,
   ) {
+    self.pos_buf.as_mut().unwrap().swap(encoder);
     if resources.params.regen_particles {
       self.regenerate_positions(device);
     }
     if !resources.params.paused {
-      self.solver.update(
-        resources.dt,
-        resources.params.k,
-        resources.params.m0,
-        resources.params.rho0,
-        resources.params.h,
-      );
+      self.solver.as_mut().unwrap().update(device, queue, &SphSolverGpuRenderResources {
+        pos: self.pos_buf.as_mut().unwrap(),
+        global_bg: resources.global_group,
+        params_buf: self.params_buf.as_mut().unwrap()
+    }, encoder);
     }
     self.write_buffers(queue, resources.params);
   }
@@ -192,9 +194,9 @@ impl<'a> RenderTarget<'a> for SphSimulation {
   fn render_into_pass(&self, pass: &mut wgpu::RenderPass, resources: &'a Self::RenderResources) {
     if resources.params.draw_particles {
       pass.set_pipeline(self.pipeline.as_ref().unwrap());
-      pass.set_vertex_buffer(0, self.pos_buf.as_ref().unwrap().slice(..));
+      pass.set_vertex_buffer(0, self.pos_buf.as_ref().unwrap().cur_buf().slice(..));
       self.setup_groups_for_render(resources.global_group, pass);
-      pass.draw(0..3, 0..(self.solver.particles().len() as u32));
+      pass.draw(0..3, 0..(self.count as u32));
     }
   }
 }
@@ -209,17 +211,6 @@ impl SphSimulation {
     opts: SimulationRegenOptions,
     depth: &DepthStencilState,
   ) -> Self {
-    let mut out = Self::new(count, device, size, opts);
-    out.regenerate_positions(device);
-    out.init_pipelines(device, format, global_layout, depth);
-    out
-  }
-  pub fn new(
-    count: usize,
-    device: &wgpu::Device,
-    size: egui::Vec2,
-    opts: SimulationRegenOptions,
-  ) -> Self {
     let mut particles: Vec<Particle> = vec![Default::default(); count];
     let mut rng = rand::rng();
     let width = size.x;
@@ -230,7 +221,8 @@ impl SphSimulation {
       p.pos.y = rng.sample(rand::distr::Uniform::new(0.0, height).unwrap());
     }
 
-    Self {
+    let mut out = Self {
+      // Initialized in `init_pipelines`
       pos_buf: None,
       pipeline: None,
       params_buf: None,
@@ -238,8 +230,12 @@ impl SphSimulation {
       height,
       width,
       opts,
-      solver: Solver::new(0., 0., vec![Default::default(); count]),
-    }
+      count,
+      solver: None,
+    };
+    out.init_pipelines(device, format, global_layout, depth);
+    out.regenerate_positions(device);
+    out
   }
 
   fn setup_groups_for_render(
@@ -259,7 +255,7 @@ impl SphSimulation {
     let theta = rand::distr::Uniform::new(0., f32::consts::PI).unwrap();
     let phi = rand::distr::Uniform::new(0., f32::consts::TAU).unwrap();
 
-    let mut parts = vec![Particle::default(); self.solver.len()];
+    let mut parts = vec![Particle::default(); self.count];
 
     parts.par_iter_mut().for_each(|p| {
       let mut rng = rand::rng();
@@ -276,7 +272,7 @@ impl SphSimulation {
         z: v * theta.cos(),
       }
     });
-    self.solver.reset(parts);
+    self.pos_buf.as_mut().unwrap().reset(parts, device);
   }
 
   fn init_pipelines(
@@ -303,7 +299,7 @@ impl SphSimulation {
     let params_buf = device.create_buffer(&wgpu::BufferDescriptor {
       label: Some("Simulation params"),
       size: std::mem::size_of::<SimulationParams>() as u64,
-      usage: BufferUsages::COPY_DST | BufferUsages::STORAGE,
+      usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
       mapped_at_creation: false,
     });
     let params_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -319,17 +315,19 @@ impl SphSimulation {
       }],
     });
 
-    let pos_buf = device.create_buffer(&BufferDescriptor {
-      label: None,
-      size: self.solver.particles().as_bytes_buffer().len() as u64,
-      usage: BufferUsages::COPY_DST | BufferUsages::VERTEX,
-      mapped_at_creation: true,
-    });
-    pos_buf
-      .slice(..)
-      .get_mapped_range_mut()
-      .copy_from_slice(self.solver.particles().as_bytes_buffer());
-    pos_buf.unmap();
+    let pos_buf = SwapBuffers::init_with(
+      vec![Default::default(); self.count],
+      device,
+      SwapBuffersDescriptor {
+        usage: BufferUsages::VERTEX
+          | BufferUsages::COPY_DST
+          | BufferUsages::COPY_SRC
+          | BufferUsages::STORAGE,
+        visibility: ShaderStages::all(),
+        ty: wgpu::BufferBindingType::Storage { read_only: false },
+        has_dynamic_offset: false,
+      },
+    );
 
     // PARTICLE DRAWING (geometry)
 
@@ -381,10 +379,21 @@ impl SphSimulation {
       cache: None,
     });
 
+    let solver = SphSolverGpu::new(
+      device,
+      &SphSolverGpuRenderResources {
+        pos: &pos_buf,
+        global_bg: &params_bg,
+        params_buf: &params_buf,
+      },
+      (self.count, &global_layout),
+    );
+
     self.pipeline = Some(pipeline);
     self.pos_buf = Some(pos_buf);
     self.params_bg = Some(params_bg);
     self.params_buf = Some(params_buf);
+    self.solver = Some(solver);
   }
 
   fn write_buffers(&self, queue: &wgpu::Queue, params: &SimulationParams) {
@@ -393,10 +402,10 @@ impl SphSimulation {
       0,
       params.as_bytes_buffer(),
     );
-    queue.write_buffer(
-      self.pos_buf.as_ref().unwrap(),
-      0,
-      self.solver.particles().as_bytes_buffer(),
-    );
+    // queue.write_buffer(
+    //   self.pos_buf.as_ref().unwrap(),
+    //   0,
+    //   self.solver.particles().as_bytes_buffer(),
+    // );
   }
 }
