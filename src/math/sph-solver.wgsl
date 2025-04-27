@@ -118,10 +118,10 @@ fn integrate_forces(@builtin(global_invocation_id) idx: vec3u) {
   cur_particles[i].velocity += g.dt * a;
 
   // Out of bounds check
-  if length(cur_particles[i].pos) > 512. {
+  if length(cur_particles[i].pos) > 800. {
     let p = cur_particles[i].pos;
-    cur_particles[i].pos = 512. * normalize(p);
-    cur_particles[i].velocity -= 2.0 * project_on(cur_particles[i].velocity, p);
+    cur_particles[i].pos = 800. * normalize(p);
+    cur_particles[i].velocity -= 1.5 * project_on(cur_particles[i].velocity, p);
   }
   if length(cur_particles[i].pos) != length(cur_particles[i].pos) {
     cur_particles[i].pos = vec3f(0., 0., 0.);

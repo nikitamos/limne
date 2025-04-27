@@ -1,6 +1,6 @@
 use core::{f32, slice};
 
-use cgmath::{Point3, Vector3};
+use cgmath::{Point3, Vector3, Zero};
 use rayon::prelude::*;
 use wgpu::VertexBufferLayout;
 
@@ -244,6 +244,7 @@ impl SphSimulation {
     pass: &mut wgpu::RenderPass<'_>,
   ) {
     pass.set_bind_group(0, global_bind_group, &[]);
+    pass.set_bind_group(1, self.params_bg.as_ref().unwrap(), &[]);
   }
 
   fn regenerate_positions(&mut self, device: &wgpu::Device) {
@@ -269,11 +270,11 @@ impl SphSimulation {
       let v = rng.sample(v_distr);
       let theta = rng.sample(theta);
       let phi = rng.sample(phi);
-      p.velocity = Vector3 {
-        x: v * theta.sin() * phi.cos(),
-        y: v * theta.sin() * phi.sin(),
-        z: v * theta.cos(),
-      }
+      p.velocity = Vector3::zero(); // {
+      //   x: v * theta.sin() * phi.cos(),
+      //   y: v * theta.sin() * phi.sin(),
+      //   z: v * theta.cos(),
+      // }
     });
     self.pos_buf.as_mut().unwrap().reset(parts, device);
   }
@@ -290,7 +291,7 @@ impl SphSimulation {
       label: Some("SimParams bg layout"),
       entries: &[wgpu::BindGroupLayoutEntry {
         binding: 0,
-        visibility: ShaderStages::COMPUTE,
+        visibility: ShaderStages::all(),
         ty: wgpu::BindingType::Buffer {
           ty: wgpu::BufferBindingType::Storage { read_only: true },
           has_dynamic_offset: false,
@@ -337,7 +338,7 @@ impl SphSimulation {
     // DRAWING layout
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
       label: None,
-      bind_group_layouts: &[global_layout],
+      bind_group_layouts: &[global_layout, &params_layout],
       push_constant_ranges: &[],
     });
 

@@ -13,7 +13,8 @@ struct Global {
   size: vec2<f32>,
   time: f32,
   dt: f32,
-  camera: mat4x4f
+  camera: mat4x4f,
+  projection: mat4x4f
 };
 
 @group(0) @binding(0)
@@ -44,7 +45,7 @@ fn vs_main(in: Input) -> VertexOutput {
   }
   var p = in.pos;
   p.z = -in.pos.z;
-  out.pos = g.camera * vec4(rotation * p, 1.0);
+  out.pos = g.projection * g.camera * vec4(rotation * p, 1.0);
   return out;
 }
 

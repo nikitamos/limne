@@ -1,5 +1,5 @@
 use bindings::{GLOBAL_BIND_LOC, GLOBAL_BIND_SIZE};
-use cgmath::Matrix4;
+use cgmath::{Deg, Matrix4};
 use egui_wgpu::{CallbackTrait, RenderState};
 use std::num::NonZero;
 use wgpu::{
@@ -41,7 +41,7 @@ pub mod bindings {
 
   pub const GLOBAL_BIND_LOC: u32 = 0;
   pub const GLOBAL_BIND_SIZE: u64 =
-    (4 * std::mem::size_of::<f32>() + std::mem::size_of::<Matrix4<f32>>()) as u64;
+    (4 * std::mem::size_of::<f32>() + 2*std::mem::size_of::<Matrix4<f32>>()) as u64;
 }
 
 #[rustfmt::skip]
@@ -236,15 +236,16 @@ impl PersistentState {
       self.texture_drawer.resized(device, &self.target_texture);
 
       let s = size.x.min(size.y);
-      self.projection = GL_TRANSFORM_TO_WGPU
-        * cgmath::ortho(
-          -size.x / 2.,
-          size.x / 2.,
-          -size.y / 2.,
-          size.y / 2.,
-          -1000.0,
-          10000.0,
-        );
+      self.projection = GL_TRANSFORM_TO_WGPU * cgmath::perspective(Deg(60.0), size.x/size.y, 100., 10000.);
+      // self.projection = GL_TRANSFORM_TO_WGPU
+      //   * cgmath::ortho(
+      //     -size.x / 2.,
+      //     size.x / 2.,
+      //     -size.y / 2.,
+      //     size.y / 2.,
+      //     -1000.0,
+      //     10000.0,
+      //   );
     }
   }
 
@@ -307,12 +308,12 @@ impl CallbackTrait for StateCallback {
     };
     state.check_resize(size, device, self);
 
-    let projection = state.projection * self.camera;
     let buf_vec: Vec<u8> = [size.x, size.y, self.time, self.dt]
       .as_bytes_buffer()
       .to_owned()
       .into_iter()
-      .chain(projection.as_bytes_buffer().to_owned())
+      .chain(self.camera.as_bytes_buffer().to_owned())
+      .chain(state.projection.as_bytes_buffer().to_owned())
       .collect();
     queue.write_buffer(&state.global_buf, 0, &buf_vec);
 

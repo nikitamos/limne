@@ -122,7 +122,7 @@ Looks at: ({:.1}, {:.1}, {:.1})\nr={:.1}",
     egui::CentralPanel::default().show(ctx, |ui| {
       egui::Frame::canvas(ui.style()).show(ui, |ui| {
         let (rect, resp) = ui.allocate_exact_size(ui.available_size(), Sense::all());
-        let drag = resp.drag_motion() * 0.07;
+        let drag = resp.drag_motion() * 0.02;
         let (fwd, back, right, left, scroll) = ui.input(|i| {
           (
             i.key_down(Key::W),
@@ -152,7 +152,7 @@ Looks at: ({:.1}, {:.1}, {:.1})\nr={:.1}",
           .controller
           .handle_drag(drag)
           .move_center_local(delta)
-          .move_radius(scroll.y * -0.3);
+          .move_radius(scroll.y * -0.5);
         // .look_at(Point3::new(0.0, 0.0, 0.0)) //-rect.width() / 2., -rect.height() / 2., 0.))
 
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
