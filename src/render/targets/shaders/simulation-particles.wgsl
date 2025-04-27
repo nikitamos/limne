@@ -33,7 +33,7 @@ fn lerp(a1: f32, a2: f32,
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-  var col: vec4<f32> = vec4(1.0, 0.0, 1.0, 1.0);
+  var col: vec4<f32> = mix(vec4(1.0, 0.0, 0.0, 1.0), vec4(0., 0., 1., 1.), length(in.particle_pos)/400.);
   // let inst = f32(in.iid);
   
   return col;

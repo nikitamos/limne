@@ -1,6 +1,6 @@
 use core::{f32, slice};
 
-use cgmath::Vector3;
+use cgmath::{Point3, Vector3};
 use rayon::prelude::*;
 use wgpu::VertexBufferLayout;
 
@@ -247,9 +247,7 @@ impl SphSimulation {
   }
 
   fn regenerate_positions(&mut self, device: &wgpu::Device) {
-    let z_distr = rand::distr::Uniform::new(-75.0, 75.0).unwrap();
-    let x_distr = rand::distr::Uniform::new(-self.width / 2., self.width / 2.).unwrap();
-    let y_distr = rand::distr::Uniform::new(-self.height / 2., self.height / 2.).unwrap();
+    let r_distr = rand::distr::Uniform::new(0., 400.0).unwrap();
 
     let v_distr = rand::distr::Uniform::new(0., 30.).unwrap();
     let theta = rand::distr::Uniform::new(0., f32::consts::PI).unwrap();
@@ -259,9 +257,14 @@ impl SphSimulation {
 
     parts.par_iter_mut().for_each(|p| {
       let mut rng = rand::rng();
-      p.pos.x = rng.sample(x_distr);
-      p.pos.y = rng.sample(y_distr);
-      p.pos.z = rng.sample(z_distr);
+      let mtheta = rng.sample(theta);
+      let mphi = rng.sample(phi);
+      let r = rng.sample(r_distr);
+      p.pos = Point3 {
+        x: r * mtheta.sin() * mphi.cos(),
+        y: r * mtheta.sin() * mphi.sin(),
+        z: r * mtheta.cos(),
+      };
 
       let v = rng.sample(v_distr);
       let theta = rng.sample(theta);

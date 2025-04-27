@@ -31,6 +31,7 @@ var<storage, read> params: SimParams;
 @group(2) @binding(0)
 var<uniform> g: Global;
 
+
 const PI: f32 = 3.14159265358979;
 
 fn poly6(r: f32, h: f32) -> f32 {
@@ -47,6 +48,13 @@ fn grad_spiky(r: vec3f, h: f32) -> vec3f {
   return -45. * pow(h - length(r), 2.) / PI / pow(h, 6.) * normalize(r);
 }
 
+fn laplacian_viscosity(r: f32, h: f32) -> f32 {
+  if r == 0. || r >= h {
+    return 0.;
+  } else {
+    return (45 / PI / pow(h, 6.)) * (h - r);
+  }
+}
 
 fn intrp_density(at: vec3<f32>) -> f32 {
   var sum: f32 = 0.0;
@@ -62,7 +70,7 @@ fn intrp_density(at: vec3<f32>) -> f32 {
 fn density_pressure(@builtin(global_invocation_id) idx: vec3u) {
   let num = idx.x;
   // Density
-  let rho = clamp(intrp_density(old_particles[num].pos), -50. * params.rho0, 50. * params.rho0);
+  let rho = clamp(intrp_density(old_particles[num].pos), -5000. * params.rho0, 5000. * params.rho0);
   cur_particles[num].density = rho;
   // Pressure
   var p = params.k * (rho - params.rho0);
@@ -81,13 +89,18 @@ fn pressure_forces(@builtin(global_invocation_id) idx: vec3u) {
     if (i == j) {
       continue;
     }
-    cur_particles[i].forces -= 0.5 * (pressure[i] + pressure[j]) / cur_particles[i].density
+    // pressure
+    cur_particles[i].forces -= 0.5 * (pressure[i] + pressure[j]) / cur_particles[j].density
       * grad_spiky(old_particles[i].pos - old_particles[j].pos, params.h);
+    // viscosity
+    cur_particles[i].forces += params.viscosity * (old_particles[j].velocity - old_particles[i].velocity)
+     * laplacian_viscosity(distance(old_particles[i].pos, old_particles[j].pos), params.h) / cur_particles[j].density;
   }
   // NaN
   if length(cur_particles[i].forces) != length(cur_particles[i].forces) {
     cur_particles[i].forces = vec3f(0.);
   }
+  cur_particles[i].forces *= params.m0;
   cur_particles[i].forces.y -= 2.0;
 }
 
@@ -108,7 +121,7 @@ fn integrate_forces(@builtin(global_invocation_id) idx: vec3u) {
   if length(cur_particles[i].pos) > 512. {
     let p = cur_particles[i].pos;
     cur_particles[i].pos = 512. * normalize(p);
-    cur_particles[i].velocity -= 1.5 * project_on(cur_particles[i].velocity, p);
+    cur_particles[i].velocity -= 2.0 * project_on(cur_particles[i].velocity, p);
   }
   if length(cur_particles[i].pos) != length(cur_particles[i].pos) {
     cur_particles[i].pos = vec3f(0., 0., 0.);

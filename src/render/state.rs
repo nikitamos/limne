@@ -189,7 +189,7 @@ impl PersistentState {
         },
         format,
         SimInit {
-          count: 7500,
+          count: 5000,
           size: egui::Vec2 {
             x: 1200.0,
             y: 800.0,
