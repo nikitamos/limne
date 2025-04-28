@@ -70,7 +70,7 @@ fn intrp_density(at: vec3<f32>) -> f32 {
 fn density_pressure(@builtin(global_invocation_id) idx: vec3u) {
   let num = idx.x;
   // Density
-  let rho = clamp(intrp_density(old_particles[num].pos), -5000. * params.rho0, 5000. * params.rho0);
+  let rho = intrp_density(old_particles[num].pos);
   cur_particles[num].density = rho;
   // Pressure
   var p = params.k * (rho - params.rho0);
@@ -118,13 +118,33 @@ fn integrate_forces(@builtin(global_invocation_id) idx: vec3u) {
   cur_particles[i].velocity += g.dt * a;
 
   // Out of bounds check
-  if length(cur_particles[i].pos) > 800. {
-    let p = cur_particles[i].pos;
-    cur_particles[i].pos = 800. * normalize(p);
-    cur_particles[i].velocity -= 1.5 * project_on(cur_particles[i].velocity, p);
+  var p = cur_particles[i].pos;
+  var v = cur_particles[i].velocity;
+  if abs(p.z) > 600. {
+    p.z = clamp(p.z, -600., 600.);
+    v.z = -v.z;
   }
-  if length(cur_particles[i].pos) != length(cur_particles[i].pos) {
-    cur_particles[i].pos = vec3f(0., 0., 0.);
+  if abs(p.x) > 600. {
+    p.x = clamp(p.x, -600., 600.);
+    v.x = -v.x;
   }
+  if p.y < -500. {
+    p.y = -500.;
+    v.y = -v.y;
+  }
+  if p.y > 700. {
+    p.y = 700.;
+    v.y = -v.y;
+  }
+  cur_particles[i].pos = p;
+  cur_particles[i].velocity = v;
+  // if length(cur_particles[i].pos) > 400. {
+  //   let p = cur_particles[i].pos;
+  //   cur_particles[i].pos = 400. * normalize(p);
+  //   cur_particles[i].velocity -= 1.8 * project_on(cur_particles[i].velocity, p);
+  // }
+  // if length(cur_particles[i].pos) != length(cur_particles[i].pos) {
+  //   cur_particles[i].pos = vec3f(0., 0., 0.);
+  // }
   // cur_particles[i].pos = vec3f(300., 300., 300.);
 }

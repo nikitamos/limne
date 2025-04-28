@@ -184,7 +184,6 @@ impl PersistentState {
           params: &Default::default(),
           global_group: &global_bind,
           global_layout: &global_layout,
-          regen_options: Some(opts),
           depth_stencil: &depth_stencil,
         },
         format,
@@ -266,7 +265,6 @@ impl PersistentState {
 pub(crate) struct StateCallback {
   pub dt: f32,
   pub time: f32,
-  pub regen_opts: Option<SimulationRegenOptions>,
   pub params: SimulationParams,
   pub camera: Matrix4<f32>,
 }
@@ -379,7 +377,6 @@ impl CallbackTrait for StateCallback {
           params: &self.params,
           global_group: &state.global_bind,
           global_layout: &state.global_layout,
-          regen_options: self.regen_opts,
           depth_stencil: &state.depth_state,
         },
       );

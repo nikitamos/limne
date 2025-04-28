@@ -2,7 +2,7 @@ use crate::render::state::*;
 use cgmath::{num_traits::zero, InnerSpace, Vector2, Zero};
 use eframe::CreationContext;
 use egui::{Button, Color32, Grid, Key, Rect, Sense};
-use std::time::Instant;
+use std::{f32::consts::PI, time::Instant};
 
 use super::{
   camera::OrbitCameraController,
@@ -30,7 +30,6 @@ impl eframe::App for App {
     let dt = time - self.time;
     // self.state.update(dt.as_secs_f32(), (time - self.startup_time).as_secs_f32());
     self.time = time;
-    let mut regen_opts = None;
 
     egui::SidePanel::left("simulation_props").show(ctx, |ui| {
       Grid::new("sim_props_grid").show(ui, |ui| {
@@ -63,35 +62,6 @@ impl eframe::App for App {
         ui.checkbox(&mut self.params.draw_particles, "Draw particles");
         ui.end_row();
       });
-      ui.collapsing("Re-generate grid", |ui| {
-        Grid::new("regen_grid_opts").show(ui, |ui| {
-          ui.label("Cell size");
-          ui.text_edit_singleline(&mut self.cell_size);
-          ui.end_row();
-
-          ui.label("Min speed");
-          ui.text_edit_singleline(&mut self.v_min);
-          ui.end_row();
-
-          ui.label("Max speed");
-          ui.text_edit_singleline(&mut self.v_max);
-          ui.end_row();
-
-          if let Some((size, vmin, vmax)) = self
-            .cell_size
-            .parse::<f32>()
-            .ok()
-            .zip(self.v_min.parse::<f32>().ok())
-            .zip_with(self.v_max.parse::<f32>().ok(), |(x, y), z| (x, y, z))
-          {
-            if ui.add_enabled(true, Button::new("Do it!")).clicked() {
-              regen_opts = Some(SimulationRegenOptions { size, vmin, vmax });
-            }
-          } else {
-            ui.colored_label(Color32::DARK_RED, "Invalid input");
-          }
-        })
-      });
       self.params.regen_particles = ui.button("Regen positions").clicked();
 
       ui.label(format!(
@@ -118,6 +88,10 @@ Looks at: ({:.1}, {:.1}, {:.1})\nr={:.1}",
       if ui.button("Reset camera").clicked() {
         self.controller.reset();
       }
+      ui.label(format!("V_0 = {}, m_0/rho_0 = {}",
+        4.0 / 3.0 * PI * self.params.h.powi(3),
+        self.params.m0/self.params.rho0
+      ));
     });
     egui::CentralPanel::default().show(ctx, |ui| {
       egui::Frame::canvas(ui.style()).show(ui, |ui| {
@@ -154,13 +128,13 @@ Looks at: ({:.1}, {:.1}, {:.1})\nr={:.1}",
           .move_center_local(delta)
           .move_radius(scroll.y * -0.5);
         // .look_at(Point3::new(0.0, 0.0, 0.0)) //-rect.width() / 2., -rect.height() / 2., 0.))
+        
 
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
           rect,
           StateCallback {
             dt: dt.as_secs_f32(),
             time: (time - self.startup_time).as_secs_f32(),
-            regen_opts,
             params: self.params,
             camera: self.controller.get_camera(),
           },

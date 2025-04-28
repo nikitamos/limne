@@ -91,7 +91,6 @@ pub struct SimResources<'a> {
   pub global_group: &'a wgpu::BindGroup,
   pub global_layout: &'a wgpu::BindGroupLayout,
   pub depth_stencil: &'a wgpu::DepthStencilState,
-  pub regen_options: Option<SimulationRegenOptions>,
 }
 
 pub struct SimUpdateResources<'a> {
@@ -118,7 +117,6 @@ pub struct SphSimulation {
   params_bg: Option<wgpu::BindGroup>,
   height: f32,
   width: f32,
-  opts: SimulationRegenOptions,
   count: usize,
   solver: Option<SphSolverGpu>,
 }
@@ -147,7 +145,6 @@ impl<'a> RenderTarget<'a> for SphSimulation {
       init_res.size,
       *format,
       resources.global_layout,
-      resources.regen_options.unwrap(),
       init_res.depth_state,
     )
   }
@@ -208,7 +205,6 @@ impl SphSimulation {
     size: egui::Vec2,
     format: wgpu::TextureFormat,
     global_layout: &wgpu::BindGroupLayout,
-    opts: SimulationRegenOptions,
     depth: &DepthStencilState,
   ) -> Self {
     let mut particles: Vec<Particle> = vec![Default::default(); count];
@@ -229,7 +225,6 @@ impl SphSimulation {
       params_bg: None,
       height,
       width,
-      opts,
       count,
       solver: None,
     };
