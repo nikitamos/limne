@@ -5,6 +5,7 @@ use wgpu::{
   TextureView, TextureViewDescriptor,
 };
 
+#[derive(Clone)]
 pub struct TextureProviderDescriptor {
   pub label: Option<String>,
   pub size: Extent3d,

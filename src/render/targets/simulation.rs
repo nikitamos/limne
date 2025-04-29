@@ -161,11 +161,16 @@ impl<'a> RenderTarget<'a> for SphSimulation {
       self.regenerate_positions(device);
     }
     if !resources.params.paused {
-      self.solver.as_mut().unwrap().update(device, queue, &SphSolverGpuRenderResources {
-        pos: self.pos_buf.as_mut().unwrap(),
-        global_bg: resources.global_group,
-        params_buf: self.params_buf.as_mut().unwrap()
-    }, encoder);
+      self.solver.as_mut().unwrap().update(
+        device,
+        queue,
+        &SphSolverGpuRenderResources {
+          pos: self.pos_buf.as_mut().unwrap(),
+          global_bg: resources.global_group,
+          params_buf: self.params_buf.as_mut().unwrap(),
+        },
+        encoder,
+      );
     }
     self.write_buffers(queue, resources.params);
   }
@@ -266,10 +271,10 @@ impl SphSimulation {
       let theta = rng.sample(theta);
       let phi = rng.sample(phi);
       p.velocity = Vector3::zero(); // {
-      //   x: v * theta.sin() * phi.cos(),
-      //   y: v * theta.sin() * phi.sin(),
-      //   z: v * theta.cos(),
-      // }
+                                    //   x: v * theta.sin() * phi.cos(),
+                                    //   y: v * theta.sin() * phi.sin(),
+                                    //   z: v * theta.cos(),
+                                    // }
     });
     self.pos_buf.as_mut().unwrap().reset(parts, device);
   }

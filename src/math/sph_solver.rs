@@ -55,7 +55,7 @@ impl Default for Particle {
       density: 1.0,
       _padding1: 0,
       velocity: Vector3::zero(),
-      _padding2: 0
+      _padding2: 0,
     }
   }
 }

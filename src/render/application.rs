@@ -12,9 +12,6 @@ use super::{
 pub struct App {
   time: Instant,
   startup_time: Instant,
-  cell_size: String,
-  v_min: String,
-  v_max: String,
   viewport_rect: Rect,
   params: SimulationParams,
   controller: OrbitCameraController,
@@ -88,9 +85,10 @@ Looks at: ({:.1}, {:.1}, {:.1})\nr={:.1}",
       if ui.button("Reset camera").clicked() {
         self.controller.reset();
       }
-      ui.label(format!("V_0 = {}, m_0/rho_0 = {}",
+      ui.label(format!(
+        "V_0 = {}, m_0/rho_0 = {}",
         4.0 / 3.0 * PI * self.params.h.powi(3),
-        self.params.m0/self.params.rho0
+        self.params.m0 / self.params.rho0
       ));
     });
     egui::CentralPanel::default().show(ctx, |ui| {
@@ -128,7 +126,6 @@ Looks at: ({:.1}, {:.1}, {:.1})\nr={:.1}",
           .move_center_local(delta)
           .move_radius(scroll.y * -0.5);
         // .look_at(Point3::new(0.0, 0.0, 0.0)) //-rect.width() / 2., -rect.height() / 2., 0.))
-        
 
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
           rect,
@@ -143,6 +140,9 @@ Looks at: ({:.1}, {:.1}, {:.1})\nr={:.1}",
       });
     });
     ctx.request_repaint();
+  }
+  fn save(&mut self, _storage: &mut dyn eframe::Storage) {
+    eprintln!("SAVE!");
   }
 }
 
@@ -159,9 +159,6 @@ impl App {
     Self {
       time: Instant::now(),
       startup_time: Instant::now(),
-      cell_size: opts.size.to_string(),
-      v_max: opts.vmax.to_string(),
-      v_min: opts.vmin.to_string(),
       // Just a random rectangle
       viewport_rect: Rect::everything_above(0.0),
       params: Default::default(),

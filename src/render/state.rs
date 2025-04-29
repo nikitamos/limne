@@ -11,7 +11,11 @@ use wgpu::{
 
 use crate::render::{
   render_target::RenderTarget,
-  targets::{gizmo::GizmoResources, show_texture::TexDrawResources, simulation::*},
+  targets::{
+    gizmo::GizmoResources,
+    show_texture::{TexDrawResources, TextureDrawerInitRes},
+    simulation::*,
+  },
   texture_provider::TextureProviderDescriptor,
 };
 
@@ -41,7 +45,7 @@ pub mod bindings {
 
   pub const GLOBAL_BIND_LOC: u32 = 0;
   pub const GLOBAL_BIND_SIZE: u64 =
-    (4 * std::mem::size_of::<f32>() + 2*std::mem::size_of::<Matrix4<f32>>()) as u64;
+    (4 * std::mem::size_of::<f32>() + 2 * std::mem::size_of::<Matrix4<f32>>()) as u64;
 }
 
 #[rustfmt::skip]
@@ -145,7 +149,11 @@ impl PersistentState {
         texture: &target_texture,
       },
       format,
-      (),
+      TextureDrawerInitRes {
+        stencil: None,
+        fragment: None,
+        layout: &[],
+      },
     );
 
     let depth_stencil = wgpu::DepthStencilState {
@@ -235,7 +243,8 @@ impl PersistentState {
       self.texture_drawer.resized(device, &self.target_texture);
 
       let s = size.x.min(size.y);
-      self.projection = GL_TRANSFORM_TO_WGPU * cgmath::perspective(Deg(60.0), size.x/size.y, 100., 10000.);
+      self.projection =
+        GL_TRANSFORM_TO_WGPU * cgmath::perspective(Deg(60.0), size.x / size.y, 100., 10000.);
       // self.projection = GL_TRANSFORM_TO_WGPU
       //   * cgmath::ortho(
       //     -size.x / 2.,

@@ -1,9 +1,32 @@
 use crate::render::render_target::{ExternalResources, RenderTarget};
 use wgpu::{
   AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
-  BindGroupLayoutEntry, Device, FilterMode, Sampler, SamplerDescriptor, ShaderStages, TextureView,
+  BindGroupLayoutEntry, DepthStencilState, Device, FilterMode, FragmentState, PipelineLayout,
+  Sampler, SamplerDescriptor, ShaderStages, TextureView,
 };
 
+/// Shows the given texture in the viewport.
+///
+/// Default fragment shader just maps the pixels of the viewport to the provided texture,
+/// although the behavior can be altered via specifying a custom fragment shader and depth/stencil buffer.
+///
+/// Note that the bind group with index `0` is occupied by the texture provided for rendering and sampler.
+/// Therefore, it has the following layout:
+/// ```wgsl
+/// @group(0) @binding(0)
+/// var tex: texture_2d<f32>;
+/// @group(0) @binding(1)
+/// var smp: sampler;
+/// ```
+/// The remaining groups can be used without limitations.
+///
+/// The input passed to the fragment shader is defined as follows:
+/// ```wgsl
+/// struct VOut {
+///  @builtin(position) clip_pos: vec4f,
+///  @location(0) texcoord: vec4f
+/// }
+/// ```
 pub struct TextureDrawer {
   sampler: Sampler,
   pipeline: wgpu::RenderPipeline,
@@ -44,15 +67,23 @@ impl TextureDrawer {
   }
 }
 
+pub struct TextureDrawerInitRes<'a> {
+  pub stencil: Option<DepthStencilState>,
+  pub fragment: Option<FragmentState<'a>>,
+  /// The first bind group here has `1` index
+  pub layout: &'a [BindGroupLayoutEntry],
+}
+
 impl<'a> RenderTarget<'a> for TextureDrawer {
   type RenderResources = TexDrawResources<'a>;
+  type InitResources = TextureDrawerInitRes<'a>;
 
   fn init<'b>(
     device: &wgpu::Device,
     _queue: &wgpu::Queue,
     resources: &'a Self::RenderResources,
     format: &wgpu::TextureFormat,
-    _: Self::InitResources,
+    mut init_res: Self::InitResources,
   ) -> Self {
     let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
       label: Some("TextureDrawer layout"),
@@ -101,13 +132,13 @@ impl<'a> RenderTarget<'a> for TextureDrawer {
         polygon_mode: wgpu::PolygonMode::Fill,
         conservative: false,
       },
-      depth_stencil: None,
+      depth_stencil: init_res.stencil,
       multisample: wgpu::MultisampleState {
         count: 1,
         mask: !0,
         alpha_to_coverage_enabled: false,
       },
-      fragment: Some(wgpu::FragmentState {
+      fragment: init_res.fragment.take().or(Some(wgpu::FragmentState {
         module: &shader,
         entry_point: None,
         compilation_options: Default::default(),
@@ -116,7 +147,7 @@ impl<'a> RenderTarget<'a> for TextureDrawer {
           blend: Some(wgpu::BlendState::REPLACE),
           write_mask: wgpu::ColorWrites::all(),
         })],
-      }),
+      })),
       multiview: None,
       cache: None,
     });
