@@ -14,7 +14,7 @@ pub trait RenderTarget<'a> {
   type InitResources = ();
   type UpdateResources = Self::RenderResources;
 
-  /// This function is used to create a valid instance of [`Self`]
+  #[deprecated = "Implement custom `new` function for every type"]
   fn init(
     _device: &wgpu::Device,
     _queue: &wgpu::Queue,

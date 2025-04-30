@@ -5,7 +5,7 @@ use wgpu::{
   Sampler, SamplerDescriptor, ShaderStages, TextureView,
 };
 
-/// Shows the given texture in the viewport.
+/// Renders the given texture into an existing render pass.
 ///
 /// Default fragment shader just maps the pixels of the viewport to the provided texture,
 /// although the behavior can be altered via specifying a custom fragment shader and depth/stencil buffer.
@@ -34,10 +34,10 @@ pub struct TextureDrawer {
   bg: BindGroup,
 }
 
-pub struct TexDrawResources<'a> {
+pub struct TextureDrawerResources<'a> {
   pub texture: &'a TextureView,
 }
-impl<'a> ExternalResources<'a> for TexDrawResources<'a> {}
+impl<'a> ExternalResources<'a> for TextureDrawerResources<'a> {}
 
 impl TextureDrawer {
   fn create_bg<'a>(
@@ -75,16 +75,38 @@ pub struct TextureDrawerInitRes<'a> {
 }
 
 impl<'a> RenderTarget<'a> for TextureDrawer {
-  type RenderResources = TexDrawResources<'a>;
+  type RenderResources = TextureDrawerResources<'a>;
   type InitResources = TextureDrawerInitRes<'a>;
 
-  fn init<'b>(
-    device: &wgpu::Device,
+  fn update<'b>(
+    &mut self,
+    _device: &wgpu::Device,
     _queue: &wgpu::Queue,
-    resources: &'a Self::RenderResources,
+    _res: &'b Self::RenderResources,
+    _encoder: &mut wgpu::CommandEncoder,
+  ) {
+    //nop?
+  }
+
+  fn render_into_pass(&self, pass: &mut wgpu::RenderPass, _resources: &'a Self::RenderResources) {
+    pass.set_pipeline(&self.pipeline);
+    pass.set_bind_group(0, &self.bg, &[]);
+    pass.draw(0..4, 0..1);
+  }
+}
+
+impl TextureDrawer {
+  pub fn new<'b>(
+    device: &wgpu::Device,
+    resources: &'b TextureDrawerResources,
     format: &wgpu::TextureFormat,
-    mut init_res: Self::InitResources,
+    mut init_res: TextureDrawerInitRes,
   ) -> Self {
+    let sample_type = if format.has_depth_aspect() {
+      wgpu::TextureSampleType::Depth
+    } else {
+      wgpu::TextureSampleType::Float { filterable: true }
+    };
     let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
       label: Some("TextureDrawer layout"),
       entries: &[
@@ -92,7 +114,7 @@ impl<'a> RenderTarget<'a> for TextureDrawer {
           binding: 0,
           visibility: ShaderStages::FRAGMENT,
           ty: wgpu::BindingType::Texture {
-            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+            sample_type,
             view_dimension: wgpu::TextureViewDimension::D2,
             multisampled: false,
           },
@@ -108,7 +130,7 @@ impl<'a> RenderTarget<'a> for TextureDrawer {
     });
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-      label: Some("Gizmo pipeline layout"),
+      label: Some("TextureDrawer"),
       bind_group_layouts: &[&layout],
       push_constant_ranges: &[],
     });
@@ -173,21 +195,5 @@ impl<'a> RenderTarget<'a> for TextureDrawer {
       layout,
       sampler,
     }
-  }
-
-  fn update<'b>(
-    &mut self,
-    _device: &wgpu::Device,
-    _queue: &wgpu::Queue,
-    _res: &'b Self::RenderResources,
-    _encoder: &mut wgpu::CommandEncoder,
-  ) {
-    //nop?
-  }
-
-  fn render_into_pass(&self, pass: &mut wgpu::RenderPass, _resources: &'a Self::RenderResources) {
-    pass.set_pipeline(&self.pipeline);
-    pass.set_bind_group(0, &self.bg, &[]);
-    pass.draw(0..4, 0..1);
   }
 }

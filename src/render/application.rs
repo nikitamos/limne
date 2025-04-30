@@ -4,10 +4,7 @@ use eframe::CreationContext;
 use egui::{Button, Color32, Grid, Key, Rect, Sense};
 use std::{f32::consts::PI, time::Instant};
 
-use super::{
-  camera::OrbitCameraController,
-  targets::simulation::{SimulationParams, SimulationRegenOptions},
-};
+use super::{camera::OrbitCameraController, targets::simulation::SimulationParams};
 
 pub struct App {
   time: Instant,
@@ -149,8 +146,7 @@ Looks at: ({:.1}, {:.1}, {:.1})\nr={:.1}",
 impl App {
   pub fn new(cc: &CreationContext<'_>) -> Self {
     let wgpu_render_state = cc.wgpu_render_state.as_ref().unwrap();
-    let opts = SimulationRegenOptions::default();
-    let state = PersistentState::create(wgpu_render_state, opts);
+    let state = PersistentState::create(wgpu_render_state);
     wgpu_render_state
       .renderer
       .write()

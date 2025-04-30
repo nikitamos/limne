@@ -30,7 +30,12 @@ impl ExternalResources<'_> for SphSolverGpuRenderResources<'_> {}
 
 impl<'a> RenderTarget<'a> for SphSolverGpu {
   type RenderResources = SphSolverGpuRenderResources<'a>;
-  type InitResources = (usize, &'a BindGroupLayout);
+  type InitResources = (
+    usize,
+    &'a BindGroupLayout,
+    &'a wgpu::Buffer,
+    &'a SwapBuffers<Vec<Particle>>,
+  );
   type UpdateResources = Self::RenderResources;
 
   fn update(
@@ -73,7 +78,6 @@ impl SphSolverGpu {
   }
   pub fn new<'a>(
     device: &wgpu::Device,
-    resources: &'a <SphSolverGpu as RenderTarget>::RenderResources,
     init_res: <SphSolverGpu as RenderTarget>::InitResources,
   ) -> Self {
     let pressure_buf = device.create_buffer(&BufferDescriptor {
@@ -118,14 +122,14 @@ impl SphSolverGpu {
         },
         BindGroupEntry {
           binding: 1,
-          resource: resources.params_buf.as_entire_binding(),
+          resource: init_res.2.as_entire_binding(),
         },
       ],
     });
 
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
       label: None,
-      bind_group_layouts: &[resources.pos.cur_layout(), &bg_layout_1, init_res.1],
+      bind_group_layouts: &[init_res.3.cur_layout(), &bg_layout_1, init_res.1],
       push_constant_ranges: &[],
     });
     let density_pressure = device.create_compute_pipeline(&ComputePipelineDescriptor {

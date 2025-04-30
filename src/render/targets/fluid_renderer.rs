@@ -1,9 +1,8 @@
 use cw::with;
-use std::marker::PhantomData;
 
 use wgpu::{
-  vertex_attr_array, BindGroup, Color, DepthBiasState, DepthStencilState, Extent3d,
-  MultisampleState, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
+  vertex_attr_array, BindGroup, BindGroupLayout, Color, DepthBiasState, DepthStencilState,
+  Extent3d, MultisampleState, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
   RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, StencilFaceState, StencilState,
   TextureUsages, VertexBufferLayout,
 };
@@ -16,7 +15,7 @@ use crate::{
   },
 };
 
-use super::show_texture::TextureDrawer;
+use super::show_texture::{TextureDrawer, TextureDrawerInitRes, TextureDrawerResources};
 
 const PARTICLE_POS_BUFFER_LAYOUT: VertexBufferLayout = VertexBufferLayout {
   array_stride: std::mem::size_of::<Particle>() as u64,
@@ -32,15 +31,21 @@ pub struct FluidRenderer {
   normals: TextureProvider,
   sphere_render: RenderPipeline,
   zbuf_smoother: TextureDrawer,
-  merger: RenderPipeline,
+  merger: TextureDrawer,
 }
 
 pub struct FluidRendererResources<'a> {
-  global_bg: &'a BindGroup,
+  pub global_bg: &'a BindGroup,
+  pub params_bg: &'a BindGroup,
+  pub pos_buf: &'a wgpu::Buffer,
+  pub count: u32,
 }
 
-pub struct FluidRenderInit {
+pub struct FluidRenderInit<'a> {
   pub size: egui::Vec2,
+  pub global_layout: &'a BindGroupLayout,
+  pub params_layout: &'a BindGroupLayout,
+  pub depth_stencil_state: DepthStencilState,
 }
 
 impl<'a> ExternalResources<'a> for FluidRendererResources<'a> {}
@@ -48,108 +53,38 @@ impl<'a> ExternalResources<'a> for FluidRendererResources<'a> {}
 impl<'a> RenderTarget<'a> for FluidRenderer {
   type RenderResources = FluidRendererResources<'a>;
 
-  type InitResources = FluidRenderInit;
+  type InitResources = FluidRenderInit<'a>;
 
   type UpdateResources = Self::RenderResources;
 
-  fn init(
-    device: &wgpu::Device,
-    _queue: &wgpu::Queue,
-    _resources: &'a Self::RenderResources,
-    _format: &wgpu::TextureFormat,
-    init_res: Self::InitResources,
-  ) -> Self
-  where
-    Self: Sized,
-  {
-    let tex_size = Extent3d {
-      width: init_res.size.x as u32,
-      height: init_res.size.y as u32,
-      depth_or_array_layers: 1,
-    };
-    let mut desc = TextureProviderDescriptor {
-      label: Some("shapes_zbuf".to_string()),
-      size: tex_size,
-      mip_level_count: 1,
-      sample_count: 1,
-      dimension: wgpu::TextureDimension::D2,
-      format: wgpu::TextureFormat::Depth32Float,
-      usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
-      view_formats: vec![],
-    };
-    let spheres_zbuf = TextureProvider::new(device, desc.clone());
-
-    desc = with!(desc: label = Some("zbuf_smoothed".to_owned()), usage = TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING);
-    let zbuf_smoothed = TextureProvider::new(device, desc.clone());
-    desc = with!(desc: label = Some("normals".to_owned()));
-    let normals = TextureProvider::new(device, desc.clone());
-    desc = with!(desc: label = Some("thickness".to_owned()));
-    let thickness = TextureProvider::new(device, desc.clone());
-    desc = with!(desc: label = Some("sphere_tex".to_owned()));
-    let sphere_tex = TextureProvider::new(device, desc);
-
-    // TODO: Copy from `simulation.rs`
-    let sphere_render = device.create_render_pipeline(&RenderPipelineDescriptor {
-      label: Some("Sphere render"),
-      layout: todo!(),
-      vertex: todo!(),
-      primitive: todo!(),
-      depth_stencil: Some(DepthStencilState {
-        format: wgpu::TextureFormat::Depth32Float,
-        depth_write_enabled: true,
-        depth_compare: wgpu::CompareFunction::LessEqual,
-        stencil: StencilState {
-          front: StencilFaceState::IGNORE,
-          back: StencilFaceState::IGNORE,
-          read_mask: 0,
-          write_mask: 0,
-        },
-        bias: DepthBiasState {
-          constant: 0,
-          slope_scale: 0.0,
-          clamp: 0.0,
-        },
-      }),
-      multisample: MultisampleState {
-        count: 1,
-        mask: !0,
-        alpha_to_coverage_enabled: false,
-      },
-      fragment: todo!(),
-      multiview: None,
-      cache: None,
-    });
-
-    Self {
-      spheres_zbuf,
-      zbuf_smoothed,
-      thickness,
-      sphere_tex,
-      normals,
-      sphere_render,
-      zbuf_smoother: todo!(),
-      merger: todo!(),
-    }
-  }
-
   fn update(
     &mut self,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
+    _device: &wgpu::Device,
+    _queue: &wgpu::Queue,
     resources: &'a Self::UpdateResources,
     encoder: &mut wgpu::CommandEncoder,
   ) {
     {
       let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
         label: Some("Spheres"),
-        color_attachments: &[Some(RenderPassColorAttachment {
-          view: &self.sphere_tex,
-          resolve_target: None,
-          ops: wgpu::Operations {
-            load: wgpu::LoadOp::Clear(Color::WHITE),
-            store: wgpu::StoreOp::Store,
-          },
-        })],
+        color_attachments: &[
+          Some(RenderPassColorAttachment {
+            view: &self.sphere_tex,
+            resolve_target: None,
+            ops: wgpu::Operations {
+              load: wgpu::LoadOp::Clear(Color::WHITE),
+              store: wgpu::StoreOp::Store,
+            },
+          }),
+          Some(RenderPassColorAttachment {
+            view: &self.sphere_tex,
+            resolve_target: None,
+            ops: wgpu::Operations {
+              load: wgpu::LoadOp::Clear(Color::WHITE),
+              store: wgpu::StoreOp::Store,
+            },
+          }),
+        ],
         depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
           view: &self.spheres_zbuf,
           depth_ops: Some(wgpu::Operations {
@@ -161,8 +96,11 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
         timestamp_writes: None,
         occlusion_query_set: None,
       });
-      pass.set_pipeline(todo!());
+      pass.set_pipeline(&self.sphere_render);
       pass.set_bind_group(0, resources.global_bg, &[]);
+      pass.set_bind_group(1, resources.params_bg, &[]);
+      pass.set_vertex_buffer(0, resources.pos_buf.slice(..));
+      pass.draw(0..3, 0..(resources.count));
     }
   }
 
@@ -186,6 +124,147 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
   }
 
   fn render_into_pass(&self, pass: &mut wgpu::RenderPass, resources: &'a Self::RenderResources) {
-    todo!()
+    self.merger.render_into_pass(
+      pass,
+      &TextureDrawerResources {
+        texture: &self.sphere_tex,
+      },
+    );
+  }
+}
+
+impl<'a> FluidRenderer {
+  pub fn new(device: &wgpu::Device, format: &wgpu::TextureFormat, init_res: FluidRenderInit) -> Self
+  where
+    Self: Sized,
+  {
+    let tex_size = Extent3d {
+      width: init_res.size.x as u32,
+      height: init_res.size.y as u32,
+      depth_or_array_layers: 1,
+    };
+    let mut desc = TextureProviderDescriptor {
+      label: Some("shapes_zbuf".to_string()),
+      size: tex_size,
+      mip_level_count: 1,
+      sample_count: 1,
+      dimension: wgpu::TextureDimension::D2,
+      format: wgpu::TextureFormat::Depth32Float,
+      usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
+      view_formats: vec![],
+    };
+    let spheres_zbuf = TextureProvider::new(device, desc.clone());
+
+    desc = with!(desc: label = Some("zbuf_smoothed".to_owned()), usage = TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING);
+    let zbuf_smoothed = TextureProvider::new(device, desc.clone());
+    desc = with!(desc: label = Some("normals".to_owned()), format = *format);
+    let normals = TextureProvider::new(device, desc.clone());
+    desc = with!(desc: label = Some("thickness".to_owned()));
+    let thickness = TextureProvider::new(device, desc.clone());
+    desc = with!(desc: label = Some("sphere_tex".to_owned()));
+    let sphere_tex = TextureProvider::new(device, desc);
+
+    let module =
+      device.create_shader_module(wgpu::include_wgsl!("shaders/simulation-particles.wgsl"));
+    let render_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+      label: None,
+      bind_group_layouts: &[init_res.global_layout, init_res.params_layout],
+      push_constant_ranges: &[],
+    });
+    let depth_stencil_state = DepthStencilState {
+      format: wgpu::TextureFormat::Depth32Float,
+      depth_write_enabled: true,
+      depth_compare: wgpu::CompareFunction::LessEqual,
+      stencil: StencilState {
+        front: StencilFaceState::IGNORE,
+        back: StencilFaceState::IGNORE,
+        read_mask: 0,
+        write_mask: 0,
+      },
+      bias: DepthBiasState {
+        constant: 0,
+        slope_scale: 0.0,
+        clamp: 0.0,
+      },
+    };
+    let sphere_render = device.create_render_pipeline(&RenderPipelineDescriptor {
+      label: Some("Sphere render"),
+      layout: Some(&render_layout),
+      vertex: wgpu::VertexState {
+        module: &module,
+        entry_point: Some("vs_main"),
+        compilation_options: Default::default(),
+        buffers: &[PARTICLE_POS_BUFFER_LAYOUT],
+      },
+      primitive: wgpu::PrimitiveState {
+        topology: wgpu::PrimitiveTopology::TriangleList,
+        strip_index_format: None,
+        front_face: wgpu::FrontFace::Ccw,
+        cull_mode: None, //Some(wgpu::Face::Back),
+        unclipped_depth: false,
+        polygon_mode: wgpu::PolygonMode::Fill,
+        conservative: false,
+      },
+      depth_stencil: Some(depth_stencil_state.clone()),
+      multisample: MultisampleState {
+        count: 1,
+        mask: !0,
+        alpha_to_coverage_enabled: false,
+      },
+      fragment: Some(wgpu::FragmentState {
+        module: &module,
+        entry_point: Some("fs_main"),
+        compilation_options: Default::default(),
+        targets: &[
+          Some(wgpu::ColorTargetState {
+            format: *format,
+            blend: Some(wgpu::BlendState::REPLACE),
+            write_mask: wgpu::ColorWrites::ALL,
+          }),
+          Some(wgpu::ColorTargetState {
+            format: *format,
+            blend: Some(wgpu::BlendState::REPLACE),
+            write_mask: wgpu::ColorWrites::ALL,
+          }),
+        ],
+      }),
+      multiview: None,
+      cache: None,
+    });
+    let zbuf_smoother = TextureDrawer::new(
+      device,
+      &TextureDrawerResources {
+        texture: &sphere_tex,
+      },
+      format,
+      TextureDrawerInitRes {
+        stencil: Some(depth_stencil_state),
+        fragment: None,
+        layout: &[],
+      },
+    );
+    let merger = TextureDrawer::new(
+      device,
+      &TextureDrawerResources {
+        texture: &sphere_tex,
+      },
+      format,
+      TextureDrawerInitRes {
+        stencil: Some(init_res.depth_stencil_state),
+        fragment: None,
+        layout: &[],
+      },
+    );
+
+    Self {
+      spheres_zbuf,
+      zbuf_smoothed,
+      thickness,
+      sphere_tex,
+      normals,
+      sphere_render,
+      zbuf_smoother,
+      merger,
+    }
   }
 }

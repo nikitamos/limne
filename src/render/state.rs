@@ -13,7 +13,7 @@ use crate::render::{
   render_target::RenderTarget,
   targets::{
     gizmo::GizmoResources,
-    show_texture::{TexDrawResources, TextureDrawerInitRes},
+    show_texture::{TextureDrawerInitRes, TextureDrawerResources},
     simulation::*,
   },
   texture_provider::TextureProviderDescriptor,
@@ -59,7 +59,7 @@ pub const GL_TRANSFORM_TO_WGPU: Matrix4<f32> =
 
 /// This structure is responsible for storing WGPU resources for the clear pass
 impl PersistentState {
-  pub fn create(rstate: &RenderState, opts: SimulationRegenOptions) -> Self {
+  pub fn create(rstate: &RenderState) -> Self {
     let RenderState {
       device,
       adapter,
@@ -142,10 +142,9 @@ impl PersistentState {
       },
     );
 
-    let texture_drawer = TextureDrawer::init(
+    let texture_drawer = TextureDrawer::new(
       device,
-      queue,
-      &TexDrawResources {
+      &TextureDrawerResources {
         texture: &target_texture,
       },
       format,
@@ -291,7 +290,7 @@ impl CallbackTrait for StateCallback {
     };
     state.texture_drawer.render_into_pass(
       pass,
-      &TexDrawResources {
+      &TextureDrawerResources {
         texture: &state.target_texture,
       },
     );

@@ -20,23 +20,6 @@ impl AsBuffer for Vec<Particle> {
   }
 }
 
-#[derive(Clone, Copy)]
-pub struct SimulationRegenOptions {
-  pub size: f32,
-  pub vmin: f32,
-  pub vmax: f32,
-}
-
-impl Default for SimulationRegenOptions {
-  fn default() -> Self {
-    Self {
-      size: 5.0,
-      vmin: 2.0,
-      vmax: 7.5,
-    }
-  }
-}
-
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SimulationParams {
@@ -79,12 +62,11 @@ impl AsBuffer for SimulationParams {
 }
 
 use rand::Rng;
-use wgpu::{
-  vertex_attr_array, BufferUsages, DepthStencilState, MultisampleState, RenderPipelineDescriptor,
-  ShaderStages,
-};
+use wgpu::{BufferUsages, DepthStencilState, ShaderStages};
 
 use crate::render::render_target::{ExternalResources, RenderTarget};
+
+use super::fluid_renderer::{FluidRenderInit, FluidRenderer, FluidRendererResources};
 
 pub struct SimResources<'a> {
   pub params: &'a SimulationParams,
@@ -112,7 +94,7 @@ impl<'a> ExternalResources<'a> for SimResources<'a> {}
 pub struct SphSimulation {
   // positions: SwapBuffers<ParticleVector<f32>>,
   pos_buf: Option<SwapBuffers<Vec<Particle>>>,
-  pipeline: Option<wgpu::RenderPipeline>,
+  fluid_renderer: Option<FluidRenderer>,
   params_buf: Option<wgpu::Buffer>,
   params_bg: Option<wgpu::BindGroup>,
   height: f32,
@@ -120,12 +102,6 @@ pub struct SphSimulation {
   count: usize,
   solver: Option<SphSolverGpu>,
 }
-
-const DEFSIM_BUFFER_LAYOUT: VertexBufferLayout = VertexBufferLayout {
-  array_stride: std::mem::size_of::<Particle>() as u64,
-  step_mode: wgpu::VertexStepMode::Instance,
-  attributes: &vertex_attr_array![0 => Float32x3],
-};
 
 impl<'a> RenderTarget<'a> for SphSimulation {
   type RenderResources = SimResources<'a>;
@@ -157,6 +133,8 @@ impl<'a> RenderTarget<'a> for SphSimulation {
     encoder: &mut wgpu::CommandEncoder,
   ) {
     self.pos_buf.as_mut().unwrap().swap(encoder);
+    self.write_buffers(queue, resources.params);
+
     if resources.params.regen_particles {
       self.regenerate_positions(device);
     }
@@ -172,7 +150,17 @@ impl<'a> RenderTarget<'a> for SphSimulation {
         encoder,
       );
     }
-    self.write_buffers(queue, resources.params);
+    self.fluid_renderer.as_mut().unwrap().update(
+      device,
+      queue,
+      &FluidRendererResources {
+        global_bg: resources.global_group,
+        params_bg: self.params_bg.as_ref().unwrap(),
+        pos_buf: self.pos_buf.as_ref().unwrap().cur_buf(),
+        count: self.count as u32,
+      },
+      encoder,
+    );
   }
 
   fn resized(
@@ -184,22 +172,38 @@ impl<'a> RenderTarget<'a> for SphSimulation {
   ) {
     self.width = new_size.x;
     self.height = new_size.y;
-    self.regenerate_positions(device);
+    // self.regenerate_positions(device);
     self.init_pipelines(
       device,
       format,
       &resources.global_layout,
       &resources.depth_stencil,
     );
+    // FIXME: Is it necessary to do? isn't it enough to call `init_pipelines`?
+    self.fluid_renderer.as_mut().unwrap().resized(
+      device,
+      new_size,
+      &FluidRendererResources {
+        global_bg: resources.global_group,
+        params_bg: self.params_bg.as_ref().unwrap(),
+        pos_buf: self.pos_buf.as_ref().unwrap().cur_buf(),
+        count: self.count as u32,
+      },
+      format,
+    );
   }
 
   fn render_into_pass(&self, pass: &mut wgpu::RenderPass, resources: &'a Self::RenderResources) {
-    if resources.params.draw_particles {
-      pass.set_pipeline(self.pipeline.as_ref().unwrap());
-      pass.set_vertex_buffer(0, self.pos_buf.as_ref().unwrap().cur_buf().slice(..));
-      self.setup_groups_for_render(resources.global_group, pass);
-      pass.draw(0..3, 0..(self.count as u32));
-    }
+    // if resources.params.draw_particles {}
+    self.fluid_renderer.as_ref().unwrap().render_into_pass(
+      pass,
+      &FluidRendererResources {
+        global_bg: resources.global_group,
+        params_bg: self.params_bg.as_ref().unwrap(),
+        pos_buf: self.pos_buf.as_ref().unwrap().cur_buf(),
+        count: self.count as u32,
+      },
+    );
   }
 }
 
@@ -225,7 +229,7 @@ impl SphSimulation {
     let mut out = Self {
       // Initialized in `init_pipelines`
       pos_buf: None,
-      pipeline: None,
+      fluid_renderer: None,
       params_buf: None,
       params_bg: None,
       height,
@@ -238,6 +242,7 @@ impl SphSimulation {
     out
   }
 
+  #[deprecated]
   fn setup_groups_for_render(
     &self,
     global_bind_group: &wgpu::BindGroup,
@@ -333,67 +338,19 @@ impl SphSimulation {
       },
     );
 
-    // PARTICLE DRAWING (geometry)
-
-    // DRAWING layout
-    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-      label: None,
-      bind_group_layouts: &[global_layout, &params_layout],
-      push_constant_ranges: &[],
-    });
-
-    let module =
-      device.create_shader_module(wgpu::include_wgsl!("shaders/simulation-particles.wgsl"));
-
-    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-      label: Some("Default simulation"),
-      layout: Some(&layout),
-      vertex: wgpu::VertexState {
-        module: &module,
-        entry_point: Some("vs_main"),
-        compilation_options: Default::default(),
-        buffers: &[DEFSIM_BUFFER_LAYOUT],
-      },
-      primitive: wgpu::PrimitiveState {
-        topology: wgpu::PrimitiveTopology::TriangleList,
-        strip_index_format: None,
-        front_face: wgpu::FrontFace::Ccw,
-        cull_mode: None, //Some(wgpu::Face::Back),
-        unclipped_depth: false,
-        polygon_mode: wgpu::PolygonMode::Fill,
-        conservative: false,
-      },
-      depth_stencil: Some(depth_stencil.clone()),
-      multisample: MultisampleState {
-        count: 1,
-        mask: !0,
-        alpha_to_coverage_enabled: false,
-      },
-      fragment: Some(wgpu::FragmentState {
-        module: &module,
-        entry_point: Some("fs_main"),
-        compilation_options: Default::default(),
-        targets: &[Some(wgpu::ColorTargetState {
-          format,
-          blend: Some(wgpu::BlendState::REPLACE),
-          write_mask: wgpu::ColorWrites::ALL,
-        })],
-      }),
-      multiview: None,
-      cache: None,
-    });
-
-    let solver = SphSolverGpu::new(
+    let solver = SphSolverGpu::new(device, (self.count, &global_layout, &params_buf, &pos_buf));
+    let fluid_renderer = FluidRenderer::new(
       device,
-      &SphSolverGpuRenderResources {
-        pos: &pos_buf,
-        global_bg: &params_bg,
-        params_buf: &params_buf,
+      &format,
+      FluidRenderInit {
+        size: egui::Vec2::new(self.width, self.height),
+        global_layout,
+        params_layout: &params_layout,
+        depth_stencil_state: depth_stencil.clone(),
       },
-      (self.count, &global_layout),
     );
 
-    self.pipeline = Some(pipeline);
+    self.fluid_renderer = Some(fluid_renderer);
     self.pos_buf = Some(pos_buf);
     self.params_bg = Some(params_bg);
     self.params_buf = Some(params_buf);
