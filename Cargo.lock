@@ -535,6 +535,7 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "env_logger",
+ "log",
  "rand",
  "rayon",
  "tokio",

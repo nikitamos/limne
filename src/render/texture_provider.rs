@@ -45,6 +45,11 @@ impl TextureProvider {
   }
 
   fn create_tex_view(device: &Device, desc: &TextureDescriptor) -> (Texture, TextureView) {
+    log::trace!(
+      "Creating TextureProvider '{}' w/format {:?}",
+      desc.label.unwrap_or_default(),
+      desc.format
+    );
     let view_label = desc.label.map(|s| {
       let mut p = "View of ".to_owned();
       p.push_str(&s);
@@ -53,7 +58,7 @@ impl TextureProvider {
     let tex = device.create_texture(desc);
     let view_descriptor = TextureViewDescriptor {
       label: view_label.as_deref(),
-      format: None,
+      format: Some(desc.format),
       dimension: None,
       usage: None,
       aspect: wgpu::TextureAspect::All,

@@ -146,6 +146,7 @@ impl PersistentState {
       device,
       &TextureDrawerResources {
         texture: &target_texture,
+        bind_groups: &[]
       },
       format,
       TextureDrawerInitRes {
@@ -292,6 +293,7 @@ impl CallbackTrait for StateCallback {
       pass,
       &TextureDrawerResources {
         texture: &state.target_texture,
+        bind_groups: &[]
       },
     );
   }

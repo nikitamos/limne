@@ -36,6 +36,8 @@ pub struct TextureDrawer {
 
 pub struct TextureDrawerResources<'a> {
   pub texture: &'a TextureView,
+  /// Bind groups for custom shading. The first group here has index `1`.
+  pub bind_groups: &'a [&'a BindGroup],
 }
 impl<'a> ExternalResources<'a> for TextureDrawerResources<'a> {}
 
@@ -71,7 +73,7 @@ pub struct TextureDrawerInitRes<'a> {
   pub stencil: Option<DepthStencilState>,
   pub fragment: Option<FragmentState<'a>>,
   /// The first bind group here has `1` index
-  pub layout: &'a [BindGroupLayoutEntry],
+  pub layout: &'a [BindGroupLayout],
 }
 
 impl<'a> RenderTarget<'a> for TextureDrawer {
@@ -88,9 +90,12 @@ impl<'a> RenderTarget<'a> for TextureDrawer {
     //nop?
   }
 
-  fn render_into_pass(&self, pass: &mut wgpu::RenderPass, _resources: &'a Self::RenderResources) {
+  fn render_into_pass(&self, pass: &mut wgpu::RenderPass, resources: &'a Self::RenderResources) {
     pass.set_pipeline(&self.pipeline);
     pass.set_bind_group(0, &self.bg, &[]);
+    for (i, &g) in resources.bind_groups.iter().enumerate() {
+      pass.set_bind_group((i + 1) as u32, g, &[]);
+    }
     pass.draw(0..4, 0..1);
   }
 }
@@ -131,7 +136,9 @@ impl TextureDrawer {
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
       label: Some("TextureDrawer"),
-      bind_group_layouts: &[&layout],
+      bind_group_layouts: &std::iter::once(&layout)
+        .chain(init_res.layout)
+        .collect::<Vec<_>>(),
       push_constant_ranges: &[],
     });
 

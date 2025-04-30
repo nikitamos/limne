@@ -1,9 +1,9 @@
 #[macro_export]
 macro_rules! with {
-  ($x:ident: $($field:ident = $val: expr), *) => {
+  ($x:ident: $($($fields:ident).* = $val: expr), *) => {
       {
         let mut y = $x;
-        $(y.$field = $val;)*
+        $(y$(.$fields)* = $val;)*
         y
       }
   };
