@@ -56,6 +56,7 @@ fn make_app_creator<'a>() -> AppCreator<'a> {
 
 #[tokio::main]
 async fn main() -> Result<(), eframe::Error> {
+  env_logger::init();
   let opts = NativeOptions {
     hardware_acceleration: eframe::HardwareAcceleration::Required,
     renderer: eframe::Renderer::Wgpu,

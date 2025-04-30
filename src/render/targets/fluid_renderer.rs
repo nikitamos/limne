@@ -1,10 +1,10 @@
 use cw::with;
 
 use wgpu::{
-  vertex_attr_array, BindGroup, BindGroupLayout, Color, DepthBiasState, DepthStencilState,
-  Extent3d, MultisampleState, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
-  RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, StencilFaceState, StencilState,
-  TextureUsages, VertexBufferLayout,
+  vertex_attr_array, BindGroup, BindGroupLayout, Color, CommandEncoderDescriptor, DepthBiasState,
+  DepthStencilState, Extent3d, FragmentState, MultisampleState, RenderPassColorAttachment,
+  RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
+  StencilFaceState, StencilState, TextureUsages, VertexBufferLayout,
 };
 
 use crate::{
@@ -59,49 +59,47 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
 
   fn update(
     &mut self,
-    _device: &wgpu::Device,
-    _queue: &wgpu::Queue,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
     resources: &'a Self::UpdateResources,
     encoder: &mut wgpu::CommandEncoder,
   ) {
-    {
-      let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-        label: Some("Spheres"),
-        color_attachments: &[
-          Some(RenderPassColorAttachment {
-            view: &self.sphere_tex,
-            resolve_target: None,
-            ops: wgpu::Operations {
-              load: wgpu::LoadOp::Clear(Color::WHITE),
-              store: wgpu::StoreOp::Store,
-            },
-          }),
-          Some(RenderPassColorAttachment {
-            view: &self.sphere_tex,
-            resolve_target: None,
-            ops: wgpu::Operations {
-              load: wgpu::LoadOp::Clear(Color::WHITE),
-              store: wgpu::StoreOp::Store,
-            },
-          }),
-        ],
-        depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
-          view: &self.spheres_zbuf,
-          depth_ops: Some(wgpu::Operations {
-            load: wgpu::LoadOp::Clear(0.0),
+    let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+      label: Some("Spheres"),
+      color_attachments: &[
+        Some(RenderPassColorAttachment {
+          view: &self.sphere_tex,
+          resolve_target: None,
+          ops: wgpu::Operations {
+            load: wgpu::LoadOp::Clear(Color::WHITE),
             store: wgpu::StoreOp::Store,
-          }),
-          stencil_ops: None,
+          },
         }),
-        timestamp_writes: None,
-        occlusion_query_set: None,
-      });
-      pass.set_pipeline(&self.sphere_render);
-      pass.set_bind_group(0, resources.global_bg, &[]);
-      pass.set_bind_group(1, resources.params_bg, &[]);
-      pass.set_vertex_buffer(0, resources.pos_buf.slice(..));
-      pass.draw(0..3, 0..(resources.count));
-    }
+        // Some(RenderPassColorAttachment {
+        //   view: &self.thickness,
+        //   resolve_target: None,
+        //   ops: wgpu::Operations {
+        //     load: wgpu::LoadOp::Clear(Color::WHITE),
+        //     store: wgpu::StoreOp::Store,
+        //   },
+        // }),
+      ],
+      depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+        view: &self.spheres_zbuf,
+        depth_ops: Some(wgpu::Operations {
+          load: wgpu::LoadOp::Clear(1.0),
+          store: wgpu::StoreOp::Store,
+        }),
+        stencil_ops: None,
+      }),
+      timestamp_writes: None,
+      occlusion_query_set: None,
+    });
+    pass.set_pipeline(&self.sphere_render);
+    pass.set_bind_group(0, resources.global_bg, &[]);
+    pass.set_bind_group(1, resources.params_bg, &[]);
+    pass.set_vertex_buffer(0, resources.pos_buf.slice(..));
+    pass.draw(0..3, 0..(resources.count));
   }
 
   fn resized(
@@ -120,7 +118,8 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
     self.spheres_zbuf.resize(device, new_size);
     self.sphere_tex.resize(device, new_size);
     self.thickness.resize(device, new_size);
-    // self.sphere_renderer.resized(device, texture);
+    self.merger.resized(device, &self.sphere_tex);
+    self.zbuf_smoother.resized(device, &self.sphere_tex);
   }
 
   fn render_into_pass(&self, pass: &mut wgpu::RenderPass, resources: &'a Self::RenderResources) {
@@ -166,6 +165,8 @@ impl<'a> FluidRenderer {
 
     let module =
       device.create_shader_module(wgpu::include_wgsl!("shaders/simulation-particles.wgsl"));
+    let merge_module =
+      device.create_shader_module(wgpu::include_wgsl!("shaders/fluid/merger.wgsl"));
     let render_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
       label: None,
       bind_group_layouts: &[init_res.global_layout, init_res.params_layout],
@@ -221,11 +222,11 @@ impl<'a> FluidRenderer {
             blend: Some(wgpu::BlendState::REPLACE),
             write_mask: wgpu::ColorWrites::ALL,
           }),
-          Some(wgpu::ColorTargetState {
-            format: *format,
-            blend: Some(wgpu::BlendState::REPLACE),
-            write_mask: wgpu::ColorWrites::ALL,
-          }),
+          // Some(wgpu::ColorTargetState {
+          //   format: *format,
+          //   blend: Some(wgpu::BlendState::REPLACE),
+          //   write_mask: wgpu::ColorWrites::ALL,
+          // }),
         ],
       }),
       multiview: None,
@@ -251,7 +252,16 @@ impl<'a> FluidRenderer {
       format,
       TextureDrawerInitRes {
         stencil: Some(init_res.depth_stencil_state),
-        fragment: None,
+        fragment: Some(FragmentState {
+          module: &merge_module,
+          entry_point: None,
+          compilation_options: Default::default(),
+          targets: &[Some(wgpu::ColorTargetState {
+            format: *format,
+            blend: Some(wgpu::BlendState::REPLACE),
+            write_mask: wgpu::ColorWrites::all(),
+          })],
+        }),
         layout: &[],
       },
     );

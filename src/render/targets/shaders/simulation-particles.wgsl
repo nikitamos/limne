@@ -12,6 +12,7 @@ struct VertexOutput {
 }
 struct FragmentOutput {
   @location(0) col: vec4f,
+  @location(1) thick: vec4f,
   @builtin(frag_depth) depth: f32,
 }
 

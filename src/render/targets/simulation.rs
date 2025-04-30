@@ -242,16 +242,6 @@ impl SphSimulation {
     out
   }
 
-  #[deprecated]
-  fn setup_groups_for_render(
-    &self,
-    global_bind_group: &wgpu::BindGroup,
-    pass: &mut wgpu::RenderPass<'_>,
-  ) {
-    pass.set_bind_group(0, global_bind_group, &[]);
-    pass.set_bind_group(1, self.params_bg.as_ref().unwrap(), &[]);
-  }
-
   fn regenerate_positions(&mut self, device: &wgpu::Device) {
     let r_distr = rand::distr::Uniform::new(0., 400.0).unwrap();
 
