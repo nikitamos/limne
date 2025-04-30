@@ -59,15 +59,15 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
   if (r2 >= radius * radius) {
     discard;
   }
-  let n = vec3(r, -sqrt(radius*radius - r2)) / radius;
-  let pixel_pos = (center_eye + vec4f(n, 0.0)) * radius;
+  let n = vec3(r, -sqrt(radius*radius - r2));
+  let pixel_pos = (center_eye + vec4f(n, 0.0));
   let clip_pos = g.projection * pixel_pos;
   
   out.col = mix(vec4(1.0, 0.0, 0.0, 1.0), vec4(0., 0., 1., 1.), length(in.center_pos)/400.);
-  let diffuse = max(0.0, dot(light_dir, n));
+  let diffuse = max(0.0, dot(light_dir, normalize(n)));
   out.col *= diffuse;
 
-  out.depth = in.clip_pos.z / in.clip_pos.w;
+  out.depth = clip_pos.z / clip_pos.w;
   
   return out;
 }

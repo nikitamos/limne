@@ -27,9 +27,16 @@ struct VOut {
   @builtin(position) clip_pos: vec4f,
   @location(0) texcoord: vec4f
 }
+struct FOut {
+  @builtin(frag_depth) depth: f32,
+  @location(0) col: vec4f
+}
 
 @fragment
-fn fs_main(in: VOut) -> @location(0) vec4f {
-    // discard;
-  return textureSample(sphere_tex, smp, in.texcoord.xy); //vec4(1., 0., 0., 1.);
+fn fs_main(in: VOut) -> FOut {
+  var o: FOut;
+  o.col = textureSample(sphere_tex, smp, in.texcoord.xy);
+  o.depth = textureSample(zbuf_smoothed, smp, in.texcoord.xy);
+  // o.col = vec4(vec3(o.depth), 1.0);
+  return o;
 }

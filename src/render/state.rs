@@ -245,15 +245,6 @@ impl PersistentState {
       let s = size.x.min(size.y);
       self.projection =
         GL_TRANSFORM_TO_WGPU * cgmath::perspective(Deg(60.0), size.x / size.y, 100., 10000.);
-      // self.projection = GL_TRANSFORM_TO_WGPU
-      //   * cgmath::ortho(
-      //     -size.x / 2.,
-      //     size.x / 2.,
-      //     -size.y / 2.,
-      //     size.y / 2.,
-      //     -1000.0,
-      //     10000.0,
-      //   );
     }
   }
 

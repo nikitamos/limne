@@ -150,17 +150,19 @@ impl<'a> RenderTarget<'a> for SphSimulation {
         encoder,
       );
     }
-    self.fluid_renderer.as_mut().unwrap().update(
-      device,
-      queue,
-      &FluidRendererResources {
-        global_bg: resources.global_group,
-        params_bg: self.params_bg.as_ref().unwrap(),
-        pos_buf: self.pos_buf.as_ref().unwrap().cur_buf(),
-        count: self.count as u32,
-      },
-      encoder,
-    );
+    if resources.params.draw_particles {
+      self.fluid_renderer.as_mut().unwrap().update(
+        device,
+        queue,
+        &FluidRendererResources {
+          global_bg: resources.global_group,
+          params_bg: self.params_bg.as_ref().unwrap(),
+          pos_buf: self.pos_buf.as_ref().unwrap().cur_buf(),
+          count: self.count as u32,
+        },
+        encoder,
+      );
+    }
   }
 
   fn resized(
@@ -194,16 +196,17 @@ impl<'a> RenderTarget<'a> for SphSimulation {
   }
 
   fn render_into_pass(&self, pass: &mut wgpu::RenderPass, resources: &'a Self::RenderResources) {
-    // if resources.params.draw_particles {}
-    self.fluid_renderer.as_ref().unwrap().render_into_pass(
-      pass,
-      &FluidRendererResources {
-        global_bg: resources.global_group,
-        params_bg: self.params_bg.as_ref().unwrap(),
-        pos_buf: self.pos_buf.as_ref().unwrap().cur_buf(),
-        count: self.count as u32,
-      },
-    );
+    if resources.params.draw_particles {
+      self.fluid_renderer.as_ref().unwrap().render_into_pass(
+        pass,
+        &FluidRendererResources {
+          global_bg: resources.global_group,
+          params_bg: self.params_bg.as_ref().unwrap(),
+          pos_buf: self.pos_buf.as_ref().unwrap().cur_buf(),
+          count: self.count as u32,
+        },
+      );
+    }
   }
 }
 
@@ -353,10 +356,5 @@ impl SphSimulation {
       0,
       params.as_bytes_buffer(),
     );
-    // queue.write_buffer(
-    //   self.pos_buf.as_ref().unwrap(),
-    //   0,
-    //   self.solver.particles().as_bytes_buffer(),
-    // );
   }
 }

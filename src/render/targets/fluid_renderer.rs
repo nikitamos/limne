@@ -1,11 +1,12 @@
 use cw::with;
 
 use wgpu::{
-  vertex_attr_array, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
-  BindGroupLayoutDescriptor, BindGroupLayoutEntry, Color, DepthBiasState, DepthStencilState,
-  Extent3d, FragmentState, MultisampleState, RenderPassColorAttachment,
-  RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
-  ShaderStages, StencilFaceState, StencilState, VertexBufferLayout,
+  core::command::TexelCopyBufferInfo, vertex_attr_array, BindGroup, BindGroupDescriptor,
+  BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, Color,
+  DepthBiasState, DepthStencilState, Extent3d, FragmentState, MultisampleState,
+  RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor,
+  RenderPipeline, RenderPipelineDescriptor, ShaderStages, StencilFaceState, StencilState,
+  TexelCopyTextureInfo, VertexBufferLayout,
 };
 
 use crate::{
@@ -65,42 +66,59 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
     resources: &'a Self::UpdateResources,
     encoder: &mut wgpu::CommandEncoder,
   ) {
-    let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-      label: Some("Spheres"),
-      color_attachments: &[
-        Some(RenderPassColorAttachment {
-          view: &self.sphere_tex,
-          resolve_target: None,
-          ops: wgpu::Operations {
-            load: wgpu::LoadOp::Clear(Color::WHITE),
+    {
+      let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+        label: Some("Spheres"),
+        color_attachments: &[
+          Some(RenderPassColorAttachment {
+            view: &self.sphere_tex,
+            resolve_target: None,
+            ops: wgpu::Operations {
+              load: wgpu::LoadOp::Clear(Color::WHITE),
+              store: wgpu::StoreOp::Store,
+            },
+          }),
+          Some(RenderPassColorAttachment {
+            view: &self.thickness,
+            resolve_target: None,
+            ops: wgpu::Operations {
+              load: wgpu::LoadOp::Clear(Color::WHITE),
+              store: wgpu::StoreOp::Store,
+            },
+          }),
+        ],
+        depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+          view: &self.spheres_zbuf,
+          depth_ops: Some(wgpu::Operations {
+            load: wgpu::LoadOp::Clear(1.0),
             store: wgpu::StoreOp::Store,
-          },
+          }),
+          stencil_ops: None,
         }),
-        Some(RenderPassColorAttachment {
-          view: &self.thickness,
-          resolve_target: None,
-          ops: wgpu::Operations {
-            load: wgpu::LoadOp::Clear(Color::WHITE),
-            store: wgpu::StoreOp::Store,
-          },
-        }),
-      ],
-      depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
-        view: &self.spheres_zbuf,
-        depth_ops: Some(wgpu::Operations {
-          load: wgpu::LoadOp::Clear(1.0),
-          store: wgpu::StoreOp::Store,
-        }),
-        stencil_ops: None,
-      }),
-      timestamp_writes: None,
-      occlusion_query_set: None,
-    });
-    pass.set_pipeline(&self.sphere_render);
-    pass.set_bind_group(0, resources.global_bg, &[]);
-    pass.set_bind_group(1, resources.params_bg, &[]);
-    pass.set_vertex_buffer(0, resources.pos_buf.slice(..));
-    pass.draw(0..3, 0..(resources.count));
+        timestamp_writes: None,
+        occlusion_query_set: None,
+      });
+      pass.set_pipeline(&self.sphere_render);
+      pass.set_bind_group(0, resources.global_bg, &[]);
+      pass.set_bind_group(1, resources.params_bg, &[]);
+      pass.set_vertex_buffer(0, resources.pos_buf.slice(..));
+      pass.draw(0..3, 0..(resources.count));
+    }
+    encoder.copy_texture_to_texture(
+      TexelCopyTextureInfo {
+        texture: self.spheres_zbuf.tex(),
+        mip_level: 0,
+        origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
+        aspect: wgpu::TextureAspect::All,
+      },
+      TexelCopyTextureInfo {
+        texture: self.zbuf_smoothed.tex(),
+        mip_level: 0,
+        origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
+        aspect: wgpu::TextureAspect::All,
+      },
+      self.zbuf_smoothed.tex().size(),
+    );
   }
 
   fn resized(
@@ -159,14 +177,14 @@ impl<'a> FluidRenderer {
       sample_count: 1,
       dimension: wgpu::TextureDimension::D2,
       format: wgpu::TextureFormat::Depth32Float,
-      usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
+      usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
       view_formats: vec![],
     };
     let spheres_zbuf = TextureProvider::new(device, desc.clone());
 
-    desc = with!(desc: label = Some("zbuf_smoothed".to_owned()));
+    desc = with!(desc: label = Some("zbuf_smoothed".to_owned()), usage = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST);
     let zbuf_smoothed = TextureProvider::new(device, desc.clone());
-    desc = with!(desc: label = Some("normals".to_owned()), format = *format);
+    desc = with!(desc: label = Some("normals".to_owned()), format = *format, usage = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT);
     let normals = TextureProvider::new(device, desc.clone());
     desc = with!(desc: label = Some("thickness".to_owned()));
     let thickness = TextureProvider::new(device, desc.clone());
