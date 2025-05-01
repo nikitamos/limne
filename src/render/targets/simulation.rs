@@ -3,10 +3,10 @@ use core::{f32, slice};
 use cgmath::{Point3, Vector3, Zero};
 use rayon::prelude::*;
 
-use crate::math::sph_solver_gpu::Particle;
-use crate::math::sph_solver_gpu::{SphSolverGpu, SphSolverGpuRenderResources};
 use crate::render::swapchain::{SwapBuffers, SwapBuffersDescriptor};
 use crate::render::AsBuffer;
+use crate::solvers::sph_solver_gpu::Particle;
+use crate::solvers::sph_solver_gpu::{SphSolverGpu, SphSolverGpuRenderResources};
 
 #[repr(C)]
 #[derive(Clone, Copy)]

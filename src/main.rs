@@ -9,8 +9,8 @@ use egui_wgpu::{WgpuConfiguration, WgpuSetup, WgpuSetupExisting};
 use render::application::App;
 use wgpu::*;
 
-mod math;
 mod render;
+mod solvers;
 
 async fn create_wgpu_setup() -> WgpuSetup {
   let instance = wgpu::Instance::new(&InstanceDescriptor {

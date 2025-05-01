@@ -9,11 +9,11 @@ use wgpu::{
 };
 
 use crate::{
-  math::sph_solver_gpu::Particle,
   render::{
     render_target::{ExternalResources, RenderTarget},
     texture_provider::{TextureProvider, TextureProviderDescriptor},
   },
+  solvers::sph_solver_gpu::Particle,
 };
 
 use super::show_texture::{TextureDrawer, TextureDrawerInitRes, TextureDrawerResources};
