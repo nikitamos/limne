@@ -527,22 +527,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96a6ac251f4a2aca6b3f91340350eab87ae57c3f127ffeb585e92bd336717991"
 
 [[package]]
-name = "cw"
-version = "0.1.0"
-dependencies = [
- "cgmath",
- "eframe",
- "egui",
- "egui-wgpu",
- "env_logger",
- "log",
- "rand",
- "rayon",
- "tokio",
- "wgpu",
-]
-
-[[package]]
 name = "dispatch"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1367,6 +1351,22 @@ dependencies = [
  "bitflags 2.9.0",
  "libc",
  "redox_syscall 0.5.11",
+]
+
+[[package]]
+name = "limne"
+version = "0.1.0"
+dependencies = [
+ "cgmath",
+ "eframe",
+ "egui",
+ "egui-wgpu",
+ "env_logger",
+ "log",
+ "rand",
+ "rayon",
+ "tokio",
+ "wgpu",
 ]
 
 [[package]]

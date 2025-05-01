@@ -7,15 +7,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'cw'",
+            "name": "Debug executable 'limne'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=cw",
-                    "--package=cw"
+                    "--bin=limne",
+                    "--package=limne"
                 ],
                 "filter": {
-                    "name": "cw",
+                    "name": "limne",
                     "kind": "bin"
                 }
             },
@@ -25,16 +25,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'cw'",
+            "name": "Debug unit tests in executable 'limne'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=cw",
-                    "--package=cw"
+                    "--bin=limne",
+                    "--package=limne"
                 ],
                 "filter": {
-                    "name": "cw",
+                    "name": "limne",
                     "kind": "bin"
                 }
             },

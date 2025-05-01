@@ -1,4 +1,4 @@
-use cw::with;
+use limne::with;
 
 use wgpu::{
   core::command::TexelCopyBufferInfo, vertex_attr_array, BindGroup, BindGroupDescriptor,
