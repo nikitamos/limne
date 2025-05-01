@@ -16,6 +16,8 @@ struct SimParams {
   viscosity: f32,
   h: f32,
   rho0: f32,
+  e: f32,
+  w: f32
 }
 
 @group(0) @binding(0)
@@ -100,8 +102,8 @@ fn pressure_forces(@builtin(global_invocation_id) idx: vec3u) {
   if length(cur_particles[i].forces) != length(cur_particles[i].forces) {
     cur_particles[i].forces = vec3f(0.);
   }
+  cur_particles[i].forces.y -= 0.7;
   cur_particles[i].forces *= params.m0;
-  cur_particles[i].forces.y -= 2.0;
 }
 
 fn project_on(a: vec3f, direction: vec3f) -> vec3f {
@@ -120,21 +122,23 @@ fn integrate_forces(@builtin(global_invocation_id) idx: vec3u) {
   // Out of bounds check
   var p = cur_particles[i].pos;
   var v = cur_particles[i].velocity;
-  if abs(p.z) > 600. {
-    p.z = clamp(p.z, -600., 600.);
-    v.z = -v.z;
+  let e = params.e;
+  let w = params.w;
+  if abs(p.z) > w {
+    p.z = clamp(p.z, -w, w);
+    v.z = -e * v.z;
   }
-  if abs(p.x) > 600. {
-    p.x = clamp(p.x, -600., 600.);
-    v.x = -v.x;
+  if abs(p.x) > w {
+    p.x = clamp(p.x, -w, w);
+    v.x = -e * v.x;
   }
   if p.y < -500. {
     p.y = -500.;
-    v.y = -v.y;
+    v.y = -e * v.y;
   }
   if p.y > 700. {
     p.y = 700.;
-    v.y = -v.y;
+    v.y = -e * v.y;
   }
   cur_particles[i].pos = p;
   cur_particles[i].velocity = v;
