@@ -20,6 +20,5 @@ fn fs_main(in: VOut) -> FOut {
   var o: FOut;
   o.norm = textureSample(sphere_tex, smp, in.texcoord.xy);
   o.depth = textureSample(zbuf, smp, in.texcoord.xy);
-  // o.col = vec4(vec3(o.depth), 1.0);
   return o;
 }

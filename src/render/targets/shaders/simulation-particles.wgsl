@@ -2,13 +2,15 @@ struct Input {
   @builtin(vertex_index) idx: u32,
   @builtin(instance_index) iid: u32,
   @location(0) pos: vec3<f32>,
+  @location(1) rho: f32,
 };
 struct VertexOutput {
     @builtin(position) out_clip_pos: vec4<f32>,
     @location(0) center_pos: vec3<f32>,
     // Vertex index
     @location(1) eye_pos: vec4<f32>,
-    @location(2) clip_pos : vec4f
+    @location(2) clip_pos : vec4f,
+    @location(3) rho: f32
 }
 struct FragmentOutput {
   @location(0) col: vec4f,
@@ -29,6 +31,8 @@ struct SimParams {
   viscosity: f32,
   h: f32,
   rho0: f32,
+  e: f32,
+  w: f32
 }
 
 // BINDING BEGIN
@@ -63,7 +67,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
   let pixel_pos = (center_eye + vec4f(n, 0.0));
   let clip_pos = g.projection * pixel_pos;
   
-  out.col = mix(vec4(1.0, 0.0, 0.0, 1.0), vec4(0., 0., 1., 1.), length(in.center_pos)/400.);
+  out.col = mix(vec4(0.0, 0.0, 1.0, 1.0), vec4(1., 0., 0., 1.), saturate(abs(in.rho) / 2. / params.rho0));
   let diffuse = max(0.0, dot(light_dir, normalize(n)));
   out.col *= diffuse;
 

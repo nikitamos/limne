@@ -28,6 +28,8 @@ struct SimParams {
   viscosity: f32,
   h: f32,
   rho0: f32,
+  e: f32,
+  w: f32
 }
 
 struct FIn {

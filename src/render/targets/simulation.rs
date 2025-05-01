@@ -16,6 +16,8 @@ pub struct SimulationParams {
   pub viscosity: f32,
   pub h: f32,
   pub rho0: f32,
+  pub e: f32,
+  pub w: f32,
   pub paused: bool,
   pub draw_particles: bool,
   pub regen_particles: bool,
@@ -25,11 +27,13 @@ pub struct SimulationParams {
 impl Default for SimulationParams {
   fn default() -> Self {
     Self {
-      k: 0.3,
-      m0: 0.01,
+      k: 40.0,
+      m0: 30.0,
       viscosity: 0.0,
-      h: 10.0,
-      rho0: 3.0,
+      h: 20.0,
+      rho0: 5.0,
+      e: 0.8,
+      w: 200.0,
       paused: false,
       draw_particles: true,
       regen_particles: false,

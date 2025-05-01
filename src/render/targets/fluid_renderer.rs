@@ -22,7 +22,7 @@ use super::show_texture::{TextureDrawer, TextureDrawerInitRes, TextureDrawerReso
 const PARTICLE_POS_BUFFER_LAYOUT: VertexBufferLayout = VertexBufferLayout {
   array_stride: std::mem::size_of::<Particle>() as u64,
   step_mode: wgpu::VertexStepMode::Instance,
-  attributes: &vertex_attr_array![0 => Float32x3],
+  attributes: &vertex_attr_array![0 => Float32x3, 1 => Float32],
 };
 
 pub struct FluidRenderer {
@@ -230,7 +230,7 @@ impl<'a> FluidRenderer {
     let depth_stencil_state = DepthStencilState {
       format: wgpu::TextureFormat::Depth32Float,
       depth_write_enabled: true,
-      depth_compare: wgpu::CompareFunction::LessEqual,
+      depth_compare: wgpu::CompareFunction::Less,
       stencil: StencilState {
         front: StencilFaceState::IGNORE,
         back: StencilFaceState::IGNORE,

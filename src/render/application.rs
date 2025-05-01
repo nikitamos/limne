@@ -7,6 +7,7 @@ use std::{f32::consts::PI, time::Instant};
 use super::{camera::OrbitCameraController, targets::simulation::SimulationParams};
 
 pub struct App {
+  time_factor: f32,
   time: Instant,
   startup_time: Instant,
   viewport_rect: Rect,
@@ -14,35 +15,46 @@ pub struct App {
   controller: OrbitCameraController,
 }
 
-const K_RANGE: std::ops::RangeInclusive<f32> = 0.0..=100.0;
-const M0_RANGE: std::ops::RangeInclusive<f32> = 0.0..=100.0;
+const K_RANGE: std::ops::RangeInclusive<f32> = 0.0..=500.0;
+const M0_RANGE: std::ops::RangeInclusive<f32> = 0.0..=500.0;
 const NU_RANGE: std::ops::RangeInclusive<f32> = 0.0..=10.0;
 
 impl eframe::App for App {
   fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
     let time = Instant::now();
     let dt = time - self.time;
-    // self.state.update(dt.as_secs_f32(), (time - self.startup_time).as_secs_f32());
     self.time = time;
 
     egui::SidePanel::left("simulation_props").show(ctx, |ui| {
       Grid::new("sim_props_grid").show(ui, |ui| {
         ui.label("K");
-        ui.add(egui::Slider::new(&mut self.params.k, K_RANGE).logarithmic(true));
+        ui.add(egui::Slider::new(&mut self.params.k, K_RANGE));
         ui.end_row();
         ui.label("m0");
-        ui.add(egui::Slider::new(&mut self.params.m0, M0_RANGE).logarithmic(true));
+        ui.add(egui::Slider::new(&mut self.params.m0, M0_RANGE));
         ui.end_row();
         ui.label("ν");
         ui.add(egui::Slider::new(&mut self.params.viscosity, NU_RANGE));
         ui.end_row();
 
         ui.label("h");
-        ui.add(egui::Slider::new(&mut self.params.h, 0.0f32..=40.0f32));
+        ui.add(egui::Slider::new(&mut self.params.h, 0.0f32..=100.0f32));
         ui.end_row();
 
         ui.label("ρ₀");
-        ui.add(egui::Slider::new(&mut self.params.rho0, 0.0f32..=10.0f32));
+        ui.add(egui::Slider::new(&mut self.params.rho0, 0.0f32..=20.0f32));
+        ui.end_row();
+
+        ui.label("e");
+        ui.add(egui::Slider::new(&mut self.params.e, 0.0f32..=1.0f32));
+        ui.end_row();
+
+        ui.label("w");
+        ui.add(egui::Slider::new(&mut self.params.w, 20.0f32..=500.0f32));
+        ui.end_row();
+
+        ui.label("t factor");
+        ui.add(egui::Slider::new(&mut self.time_factor, 0.0..=1.0));
         ui.end_row();
 
         ui.checkbox(&mut self.params.paused, "Paused");
@@ -127,7 +139,7 @@ Looks at: ({:.1}, {:.1}, {:.1})\nr={:.1}",
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
           rect,
           StateCallback {
-            dt: dt.as_secs_f32(),
+            dt: dt.as_secs_f32() * self.time_factor,
             time: (time - self.startup_time).as_secs_f32(),
             params: self.params,
             camera: self.controller.get_camera(),
@@ -153,6 +165,7 @@ impl App {
       .callback_resources
       .insert(state);
     Self {
+      time_factor: 1.0,
       time: Instant::now(),
       startup_time: Instant::now(),
       // Just a random rectangle
