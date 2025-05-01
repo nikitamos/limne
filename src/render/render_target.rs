@@ -7,7 +7,7 @@ pub trait ExternalResources<'a> {
   // }
 }
 
-impl<'a> ExternalResources<'a> for () {}
+impl ExternalResources<'_> for () {}
 
 pub trait RenderTarget<'a> {
   type RenderResources: ExternalResources<'a>;

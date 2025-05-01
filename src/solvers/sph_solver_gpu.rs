@@ -41,7 +41,7 @@ impl AsBuffer for &[Particle] {
     unsafe {
       slice::from_raw_parts(
         self.as_ptr().cast(),
-        std::mem::size_of::<Particle>() * self.len(),
+        std::mem::size_of_val(*self),
       )
     }
   }
@@ -112,10 +112,10 @@ impl<'a> RenderTarget<'a> for SphSolverGpu {
 }
 
 impl SphSolverGpu {
-  fn setup_groups_for_compute<'a>(
+  fn setup_groups_for_compute(
     &self,
     pipeline: &ComputePipeline,
-    resources: &SphSolverGpuRenderResources<'a>,
+    resources: &SphSolverGpuRenderResources<'_>,
     pass: &mut wgpu::ComputePass<'_>,
   ) {
     pass.set_pipeline(pipeline);

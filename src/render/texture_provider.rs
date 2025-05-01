@@ -18,7 +18,7 @@ pub struct TextureProviderDescriptor {
 }
 
 impl TextureProviderDescriptor {
-  pub fn tex_descriptor<'a>(&'a self) -> TextureDescriptor<'a> {
+  pub fn tex_descriptor(&self) -> TextureDescriptor<'_> {
     TextureDescriptor {
       label: self.label.as_deref(),
       size: self.size,
@@ -52,7 +52,7 @@ impl TextureProvider {
     );
     let view_label = desc.label.map(|s| {
       let mut p = "View of ".to_owned();
-      p.push_str(&s);
+      p.push_str(s);
       p
     });
     let tex = device.create_texture(desc);

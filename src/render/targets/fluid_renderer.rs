@@ -4,9 +4,9 @@ use wgpu::{
   vertex_attr_array, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
   BindGroupLayoutDescriptor, BindGroupLayoutEntry, BlendState, Color, ColorTargetState,
   ColorWrites, DepthBiasState, DepthStencilState, Extent3d, FragmentState, MultisampleState,
-  PipelineCompilationOptions, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
-  RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, ShaderStages, StencilFaceState,
-  StencilState, TexelCopyTextureInfo, VertexBufferLayout,
+  RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor,
+  RenderPipeline, RenderPipelineDescriptor, ShaderStages, StencilFaceState, StencilState,
+  VertexBufferLayout,
 };
 
 use crate::{
@@ -260,7 +260,7 @@ impl<'a> FluidRenderer {
       count: None,
     };
     let merge_bgl = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-      label: Some("Merge texutures BG layout"),
+      label: Some("Merge textures BG layout"),
       entries: &[
         with!(tex_bgle: ty = tex_ty_depth),
         with!(tex_bgle: binding = 1),

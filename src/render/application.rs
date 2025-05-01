@@ -1,7 +1,7 @@
 use crate::render::state::*;
 use cgmath::{num_traits::zero, InnerSpace, Vector2, Zero};
 use eframe::CreationContext;
-use egui::{Button, Color32, Grid, Key, Rect, Sense};
+use egui::{Grid, Key, Rect, Sense};
 use std::{f32::consts::PI, time::Instant};
 
 use super::{camera::OrbitCameraController, targets::simulation::SimulationParams};

@@ -108,7 +108,7 @@ impl PersistentState {
     });
 
     let depth_texture = TextureProvider::new(
-      &device,
+      device,
       TextureProviderDescriptor {
         label: Some("Depth texture".into()),
         size: wgpu::Extent3d {
@@ -125,7 +125,7 @@ impl PersistentState {
       },
     );
     let target_texture = TextureProvider::new(
-      &device,
+      device,
       TextureProviderDescriptor {
         label: Some("Target texture".to_owned()),
         size: wgpu::Extent3d {

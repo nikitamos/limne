@@ -1,7 +1,7 @@
 use crate::render::render_target::{ExternalResources, RenderTarget};
 use wgpu::{
   AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
-  BindGroupLayoutEntry, DepthStencilState, Device, FilterMode, FragmentState, PipelineLayout,
+  BindGroupLayoutEntry, DepthStencilState, Device, FilterMode, FragmentState,
   Sampler, SamplerDescriptor, ShaderStages, TextureView,
 };
 
@@ -58,7 +58,7 @@ impl TextureDrawer {
         },
         BindGroupEntry {
           binding: 1,
-          resource: wgpu::BindingResource::Sampler(&sampler),
+          resource: wgpu::BindingResource::Sampler(sampler),
         },
       ],
     });
@@ -80,11 +80,11 @@ impl<'a> RenderTarget<'a> for TextureDrawer {
   type RenderResources = TextureDrawerResources<'a>;
   type InitResources = TextureDrawerInitRes<'a>;
 
-  fn update<'b>(
+  fn update(
     &mut self,
     _device: &wgpu::Device,
     _queue: &wgpu::Queue,
-    _res: &'b Self::RenderResources,
+    _res: &Self::RenderResources,
     _encoder: &mut wgpu::CommandEncoder,
   ) {
     //nop?
@@ -101,9 +101,9 @@ impl<'a> RenderTarget<'a> for TextureDrawer {
 }
 
 impl TextureDrawer {
-  pub fn new<'b>(
+  pub fn new(
     device: &wgpu::Device,
-    resources: &'b TextureDrawerResources,
+    resources: &TextureDrawerResources,
     format: &wgpu::TextureFormat,
     mut init_res: TextureDrawerInitRes,
   ) -> Self {

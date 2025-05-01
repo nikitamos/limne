@@ -168,8 +168,8 @@ impl<'a> RenderTarget<'a> for SphSimulation {
     self.init_pipelines(
       device,
       format,
-      &resources.global_layout,
-      &resources.depth_stencil,
+      resources.global_layout,
+      resources.depth_stencil,
     );
     // FIXME: Is it necessary to do? isn't it enough to call `init_pipelines`?
     self.fluid_renderer.as_mut().unwrap().resized(
@@ -321,7 +321,7 @@ impl SphSimulation {
       },
     );
 
-    let solver = SphSolverGpu::new(device, (self.count, &global_layout, &params_buf, &pos_buf));
+    let solver = SphSolverGpu::new(device, (self.count, global_layout, &params_buf, &pos_buf));
     let fluid_renderer = FluidRenderer::new(
       device,
       &format,
