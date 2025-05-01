@@ -2,23 +2,11 @@ use core::{f32, slice};
 
 use cgmath::{Point3, Vector3, Zero};
 use rayon::prelude::*;
-use wgpu::VertexBufferLayout;
 
-use crate::math::sph_solver::Particle;
+use crate::math::sph_solver_gpu::Particle;
 use crate::math::sph_solver_gpu::{SphSolverGpu, SphSolverGpuRenderResources};
 use crate::render::swapchain::{SwapBuffers, SwapBuffersDescriptor};
 use crate::render::AsBuffer;
-
-impl AsBuffer for Vec<Particle> {
-  fn as_bytes_buffer(&self) -> &[u8] {
-    unsafe {
-      slice::from_raw_parts(
-        self.as_ptr().cast(),
-        self.len() * std::mem::size_of::<Particle>(),
-      )
-    }
-  }
-}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -132,8 +120,10 @@ impl<'a> RenderTarget<'a> for SphSimulation {
     resources: &'a Self::UpdateResources,
     encoder: &mut wgpu::CommandEncoder,
   ) {
-    self.pos_buf.as_mut().unwrap().swap(encoder);
-    self.write_buffers(queue, resources.params);
+    if !resources.params.paused {
+      self.pos_buf.as_mut().unwrap().swap(encoder);
+      self.write_buffers(queue, resources.params);
+    }
 
     if resources.params.regen_particles {
       self.regenerate_positions(device);

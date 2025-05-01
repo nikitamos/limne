@@ -1,16 +1,15 @@
 use limne::with;
 
 use wgpu::{
-  core::command::TexelCopyBufferInfo, vertex_attr_array, BindGroup, BindGroupDescriptor,
-  BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, Color,
-  DepthBiasState, DepthStencilState, Extent3d, FragmentState, MultisampleState,
-  RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor,
-  RenderPipeline, RenderPipelineDescriptor, ShaderStages, StencilFaceState, StencilState,
-  TexelCopyTextureInfo, VertexBufferLayout,
+  vertex_attr_array, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
+  BindGroupLayoutDescriptor, BindGroupLayoutEntry, Color, DepthBiasState, DepthStencilState,
+  Extent3d, FragmentState, MultisampleState, RenderPassColorAttachment,
+  RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
+  ShaderStages, StencilFaceState, StencilState, TexelCopyTextureInfo, VertexBufferLayout,
 };
 
 use crate::{
-  math::sph_solver::Particle,
+  math::sph_solver_gpu::Particle,
   render::{
     render_target::{ExternalResources, RenderTarget},
     texture_provider::{TextureProvider, TextureProviderDescriptor},
@@ -154,7 +153,7 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
       pass,
       &TextureDrawerResources {
         texture: &self.sphere_tex,
-        bind_groups: &[&self.merge_bg, resources.global_bg]
+        bind_groups: &[&self.merge_bg, resources.global_bg],
       },
     );
   }
@@ -177,7 +176,9 @@ impl<'a> FluidRenderer {
       sample_count: 1,
       dimension: wgpu::TextureDimension::D2,
       format: wgpu::TextureFormat::Depth32Float,
-      usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+      usage: wgpu::TextureUsages::TEXTURE_BINDING
+        | wgpu::TextureUsages::RENDER_ATTACHMENT
+        | wgpu::TextureUsages::COPY_SRC,
       view_formats: vec![],
     };
     let spheres_zbuf = TextureProvider::new(device, desc.clone());
@@ -298,7 +299,7 @@ impl<'a> FluidRenderer {
       &TextureDrawerResources {
         texture: &sphere_tex,
         // TODO: add group with `spheres_zbuf` accoding to the plan
-        bind_groups: &[]
+        bind_groups: &[],
       },
       format,
       TextureDrawerInitRes {
@@ -311,7 +312,7 @@ impl<'a> FluidRenderer {
       device,
       &TextureDrawerResources {
         texture: &sphere_tex,
-        bind_groups: &[&merge_bg]
+        bind_groups: &[&merge_bg],
       },
       format,
       TextureDrawerInitRes {

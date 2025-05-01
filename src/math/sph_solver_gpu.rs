@@ -1,3 +1,6 @@
+use std::slice;
+
+use cgmath::{EuclideanSpace, Point3, Vector3, Zero};
 use wgpu::{
   BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
   BindGroupLayoutEntry, Buffer, BufferDescriptor, ComputePassDescriptor, ComputePipeline,
@@ -7,9 +10,53 @@ use wgpu::{
 use crate::render::{
   render_target::{ExternalResources, RenderTarget},
   swapchain::SwapBuffers,
+  AsBuffer,
 };
 
-pub use super::sph_solver::Particle;
+#[derive(Clone, Debug)]
+pub struct Particle {
+  pub pos: Point3<f32>,
+  pub density: f32,
+  pub velocity: Vector3<f32>,
+  _padding1: u32,
+  forces: Vector3<f32>,
+  _padding2: u32,
+}
+
+impl Default for Particle {
+  fn default() -> Self {
+    Self {
+      forces: Vector3::zero(),
+      pos: Point3::origin(),
+      density: 1.0,
+      _padding1: 0,
+      velocity: Vector3::zero(),
+      _padding2: 0,
+    }
+  }
+}
+
+impl AsBuffer for &[Particle] {
+  fn as_bytes_buffer(&self) -> &[u8] {
+    unsafe {
+      slice::from_raw_parts(
+        self.as_ptr().cast(),
+        std::mem::size_of::<Particle>() * self.len(),
+      )
+    }
+  }
+}
+
+impl AsBuffer for Vec<Particle> {
+  fn as_bytes_buffer(&self) -> &[u8] {
+    unsafe {
+      slice::from_raw_parts(
+        self.as_ptr().cast(),
+        std::mem::size_of::<Particle>() * self.len(),
+      )
+    }
+  }
+}
 
 pub struct SphSolverGpu {
   density_pressure: ComputePipeline,
