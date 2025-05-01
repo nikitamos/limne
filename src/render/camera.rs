@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use cgmath::{
   EuclideanSpace, Matrix4, Point3, Quaternion, Rad, Rotation, Rotation3, Vector2, Vector3,
 };

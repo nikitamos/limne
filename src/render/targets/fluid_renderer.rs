@@ -2,10 +2,11 @@ use limne::with;
 
 use wgpu::{
   vertex_attr_array, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
-  BindGroupLayoutDescriptor, BindGroupLayoutEntry, Color, DepthBiasState, DepthStencilState,
-  Extent3d, FragmentState, MultisampleState, RenderPassColorAttachment,
-  RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
-  ShaderStages, StencilFaceState, StencilState, TexelCopyTextureInfo, VertexBufferLayout,
+  BindGroupLayoutDescriptor, BindGroupLayoutEntry, BlendState, Color, ColorTargetState,
+  ColorWrites, DepthBiasState, DepthStencilState, Extent3d, FragmentState, MultisampleState,
+  PipelineCompilationOptions, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
+  RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, ShaderStages, StencilFaceState,
+  StencilState, TexelCopyTextureInfo, VertexBufferLayout,
 };
 
 use crate::{
@@ -35,6 +36,8 @@ pub struct FluidRenderer {
   merger: TextureDrawer,
   merge_bgl: BindGroupLayout,
   merge_bg: BindGroup,
+  zbuf_smoother_bg: BindGroup,
+  zbuf_smoother_bgl: BindGroupLayout,
 }
 
 pub struct FluidRendererResources<'a> {
@@ -65,6 +68,7 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
     resources: &'a Self::UpdateResources,
     encoder: &mut wgpu::CommandEncoder,
   ) {
+    // Render spheres to the depth buffer
     {
       let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
         label: Some("Spheres"),
@@ -103,21 +107,37 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
       pass.set_vertex_buffer(0, resources.pos_buf.slice(..));
       pass.draw(0..3, 0..(resources.count));
     }
-    encoder.copy_texture_to_texture(
-      TexelCopyTextureInfo {
-        texture: self.spheres_zbuf.tex(),
-        mip_level: 0,
-        origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
-        aspect: wgpu::TextureAspect::All,
-      },
-      TexelCopyTextureInfo {
-        texture: self.zbuf_smoothed.tex(),
-        mip_level: 0,
-        origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
-        aspect: wgpu::TextureAspect::All,
-      },
-      self.zbuf_smoothed.tex().size(),
-    );
+    // Smooth the depth buffer and build normal map
+    {
+      let mut zbuf_smoothing_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+        label: Some("zbuf_smoothing"),
+        color_attachments: &[Some(RenderPassColorAttachment {
+          view: &self.normals,
+          resolve_target: None,
+          ops: wgpu::Operations {
+            load: wgpu::LoadOp::Clear(Color::WHITE),
+            store: wgpu::StoreOp::Store,
+          },
+        })],
+        depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+          view: &self.zbuf_smoothed,
+          depth_ops: Some(wgpu::Operations {
+            load: wgpu::LoadOp::Clear(1.0),
+            store: wgpu::StoreOp::Store,
+          }),
+          stencil_ops: None,
+        }),
+        timestamp_writes: None,
+        occlusion_query_set: None,
+      });
+      self.zbuf_smoother.render_into_pass(
+        &mut zbuf_smoothing_pass,
+        &TextureDrawerResources {
+          texture: &self.sphere_tex,
+          bind_groups: &[&self.zbuf_smoother_bg],
+        },
+      );
+    }
   }
 
   fn resized(
@@ -136,6 +156,8 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
     self.spheres_zbuf.resize(device, new_size);
     self.sphere_tex.resize(device, new_size);
     self.thickness.resize(device, new_size);
+    self.zbuf_smoothed.resize(device, new_size);
+
     self.merger.resized(device, &self.sphere_tex);
     self.zbuf_smoother.resized(device, &self.sphere_tex);
     self.merge_bg = create_merge_bg(
@@ -146,6 +168,7 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
       &self.sphere_tex,
       &self.merge_bgl,
     );
+    self.zbuf_smoother_bg = create_smoother_bg(device, &self.spheres_zbuf, &self.zbuf_smoother_bgl);
   }
 
   fn render_into_pass(&self, pass: &mut wgpu::RenderPass, resources: &'a Self::RenderResources) {
@@ -196,6 +219,9 @@ impl<'a> FluidRenderer {
       device.create_shader_module(wgpu::include_wgsl!("shaders/simulation-particles.wgsl"));
     let merge_module =
       device.create_shader_module(wgpu::include_wgsl!("shaders/fluid/merger.wgsl"));
+    let smooth_module =
+      device.create_shader_module(wgpu::include_wgsl!("shaders/fluid/zbuf-smoother.wgsl"));
+
     let render_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
       label: None,
       bind_group_layouts: &[init_res.global_layout, init_res.params_layout],
@@ -294,18 +320,41 @@ impl<'a> FluidRenderer {
       multiview: None,
       cache: None,
     });
+
+    let zbuf_smoother_bgl = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+      label: Some("zbuf_smoother_bg"),
+      entries: &[BindGroupLayoutEntry {
+        binding: 0,
+        visibility: ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+          sample_type: wgpu::TextureSampleType::Depth,
+          view_dimension: wgpu::TextureViewDimension::D2,
+          multisampled: false,
+        },
+        count: None,
+      }],
+    });
+    let zbuf_smoother_bg = create_smoother_bg(device, &spheres_zbuf, &zbuf_smoother_bgl);
     let zbuf_smoother = TextureDrawer::new(
       device,
       &TextureDrawerResources {
         texture: &sphere_tex,
-        // TODO: add group with `spheres_zbuf` accoding to the plan
-        bind_groups: &[],
+        bind_groups: &[&zbuf_smoother_bg],
       },
       format,
       TextureDrawerInitRes {
         stencil: Some(depth_stencil_state),
-        fragment: None,
-        layout: &[],
+        fragment: Some(FragmentState {
+          module: &smooth_module,
+          entry_point: None,
+          compilation_options: Default::default(),
+          targets: &[Some(ColorTargetState {
+            format: *format,
+            blend: Some(BlendState::REPLACE),
+            write_mask: ColorWrites::ALL,
+          })],
+        }),
+        layout: &[zbuf_smoother_bgl.clone()],
       },
     );
     let merger = TextureDrawer::new(
@@ -342,8 +391,26 @@ impl<'a> FluidRenderer {
       merger,
       merge_bgl,
       merge_bg,
+      zbuf_smoother_bg,
+      zbuf_smoother_bgl,
     }
   }
+}
+
+fn create_smoother_bg(
+  device: &wgpu::Device,
+  spheres_zbuf: &TextureProvider,
+  zbuf_smoother_bgl: &BindGroupLayout,
+) -> BindGroup {
+  let zbuf_smoother_bg = device.create_bind_group(&BindGroupDescriptor {
+    label: Some("zbuf_smoothed_bg"),
+    layout: zbuf_smoother_bgl,
+    entries: &[BindGroupEntry {
+      binding: 0,
+      resource: wgpu::BindingResource::TextureView(spheres_zbuf),
+    }],
+  });
+  zbuf_smoother_bg
 }
 
 fn create_merge_bg(
