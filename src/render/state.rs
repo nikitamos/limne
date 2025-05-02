@@ -62,17 +62,10 @@ impl PersistentState {
   pub fn create(rstate: &RenderState) -> Self {
     let RenderState {
       device,
-      adapter,
       target_format: format,
       queue,
       ..
     } = rstate;
-
-    println!(
-      "Adapter: {}\nBackend: {}",
-      adapter.get_info().name,
-      adapter.get_info().backend.to_str().to_uppercase()
-    );
 
     let global_buf = device.create_buffer(&BufferDescriptor {
       label: None,

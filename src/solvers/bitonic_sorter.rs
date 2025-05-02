@@ -1,4 +1,4 @@
-use wgpu::{core::device::queue, ComputePipelineDescriptor};
+use wgpu::ComputePipelineDescriptor;
 
 mod test {
   use wgpu::{InstanceDescriptor, RequestAdapterOptions};
@@ -28,12 +28,17 @@ mod test {
 fn sort_256_cpu(a: &[i32]) {
   assert_eq!(a.len(), 256);
   for i in 0..8 { // sort passes & distances
-    // swaps than can be done in parallel
-    for i in 0..128 {
+    // swaps that can be done in parallel
+    for j in 0..128 {
       
     }
     // Barrier here?
   }
+}
+
+pub fn bitonic_sort(a: &[i32]) {
+  assert_eq!(a.len().count_ones(), 1, "Length is not power of 2");
+  assert!(a.len() >= 256, "Length is less than 256");
 }
 
 pub struct BitonicSorter {

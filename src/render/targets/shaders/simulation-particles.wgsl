@@ -70,6 +70,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
   out.col = mix(vec4(0.0, 0.0, 1.0, 1.0), vec4(1., 0., 0., 1.), saturate(abs(in.rho) / 2. / params.rho0));
   let diffuse = max(0.0, dot(light_dir, normalize(n)));
   out.col *= diffuse;
+  out.thick = vec4(normalize(n), 1.0);
 
   out.depth = clip_pos.z / clip_pos.w;
   

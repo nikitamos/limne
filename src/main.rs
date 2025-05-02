@@ -13,6 +13,13 @@ mod render;
 mod solvers;
 
 async fn create_wgpu_setup() -> WgpuSetup {
+  let required_limits = Limits {
+    max_bind_groups: 5,
+    max_compute_invocations_per_workgroup: 1024,
+    max_compute_workgroup_storage_size: 49152,
+    ..Default::default()
+  };
+
   let instance = wgpu::Instance::new(&InstanceDescriptor {
     backends: Backends::all(),
     ..Default::default()
@@ -27,20 +34,23 @@ async fn create_wgpu_setup() -> WgpuSetup {
     .await
     .expect("Unable to create an adapter");
 
+  log::info!("Adapter: {}", adapter.get_info().name);
+  log::info!("Backend: {}", adapter.get_info().backend);
+
+  log::debug!("Required limits:\n {:#?}", required_limits);
+  log::debug!("Adapter's limits:\n{:#?}", adapter.limits());
+
   let (device, queue) = adapter
     .request_device(
       &DeviceDescriptor {
         required_features: Features::VERTEX_WRITABLE_STORAGE | Features::POLYGON_MODE_LINE,
-        required_limits: Limits {
-          max_bind_groups: 5,
-          ..Default::default()
-        },
+        required_limits,
         ..Default::default()
       },
       None,
     )
     .await
-    .expect("unable to create a device");
+    .expect("Your hardware is unsupported");
 
   WgpuSetup::Existing(WgpuSetupExisting {
     instance,
@@ -68,5 +78,5 @@ async fn main() -> Result<(), eframe::Error> {
     },
     ..Default::default()
   };
-  eframe::run_native("org.m0sni.krusach2", opts, make_app_creator())
+  eframe::run_native("m0sni.limne", opts, make_app_creator())
 }
