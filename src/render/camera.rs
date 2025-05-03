@@ -1,5 +1,6 @@
 use cgmath::{
-  EuclideanSpace, Matrix4, Point3, Quaternion, Rad, Rotation, Rotation3, Vector2, Vector3,
+  EuclideanSpace, InnerSpace, Matrix4, Point3, Quaternion, Rad, Rotation, Rotation3, Vector2,
+  Vector3,
 };
 
 pub struct OrbitCameraController {
@@ -77,6 +78,21 @@ impl OrbitCameraController {
 
   #[must_use]
   pub fn get_camera(&self) -> Matrix4<f32> {
+    #[cfg(debug_assertions)]
+    if (self.right.cross(self.up).magnitude2() - 1.0).abs() > 0.01 {
+      dbg!(self.right.cross(self.up));
+      log::error!(
+        "Cross product is not normalized, right={}, up={}, angle={}rad",
+        self.right.magnitude(),
+        self.up.magnitude(),
+        self.up.angle(self.right).0
+      );
+      unsafe {
+        let this = std::ptr::from_ref(self).cast_mut();
+        (*this).right = self.right.normalize();
+        (*this).up = self.up.normalize();
+      }
+    }
     Matrix4::look_at_rh(
       self.center + self.r * self.right.cross(self.up),
       self.center,

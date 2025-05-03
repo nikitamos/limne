@@ -7,6 +7,7 @@
 use eframe::{AppCreator, NativeOptions};
 use egui_wgpu::{WgpuConfiguration, WgpuSetup, WgpuSetupExisting};
 use render::application::App;
+use solvers::{bitonic_sorter::LOCAL_PASS_SIZE, sph_solver_gpu::Particle};
 use wgpu::*;
 
 mod render;
@@ -15,10 +16,19 @@ mod solvers;
 async fn create_wgpu_setup() -> WgpuSetup {
   let required_limits = Limits {
     max_bind_groups: 5,
-    max_compute_invocations_per_workgroup: 1024,
-    max_compute_workgroup_storage_size: 49152,
+    max_compute_invocations_per_workgroup: LOCAL_PASS_SIZE as u32,
+    max_compute_workgroup_storage_size: (LOCAL_PASS_SIZE * size_of::<Particle>()) as u32,
+    max_push_constant_size: 4,
     ..Default::default()
   };
+  let required_features =
+    Features::VERTEX_WRITABLE_STORAGE | Features::POLYGON_MODE_LINE | Features::PUSH_CONSTANTS;
+
+  log::info!("Required workgroup size: {LOCAL_PASS_SIZE}");
+  log::info!(
+    "Required local storage: {}",
+    required_limits.max_compute_workgroup_storage_size
+  );
 
   let instance = wgpu::Instance::new(&InstanceDescriptor {
     backends: Backends::all(),
@@ -34,16 +44,14 @@ async fn create_wgpu_setup() -> WgpuSetup {
     .await
     .expect("Unable to create an adapter");
 
-  log::info!("Adapter: {}", adapter.get_info().name);
   log::info!("Backend: {}", adapter.get_info().backend);
-
-  log::debug!("Required limits:\n {:#?}", required_limits);
+  log::info!("Adapter: {}", adapter.get_info().name);
   log::debug!("Adapter's limits:\n{:#?}", adapter.limits());
 
   let (device, queue) = adapter
     .request_device(
       &DeviceDescriptor {
-        required_features: Features::VERTEX_WRITABLE_STORAGE | Features::POLYGON_MODE_LINE,
+        required_features,
         required_limits,
         ..Default::default()
       },
