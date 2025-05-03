@@ -139,7 +139,7 @@ impl PersistentState {
       device,
       &TextureDrawerResources {
         texture: &target_texture,
-        bind_groups: &[]
+        bind_groups: &[],
       },
       format,
       TextureDrawerInitRes {
@@ -189,7 +189,7 @@ impl PersistentState {
         },
         format,
         SimInit {
-          count: 5000,
+          count: 12000,
           size: egui::Vec2 {
             x: 1200.0,
             y: 800.0,
@@ -277,7 +277,7 @@ impl CallbackTrait for StateCallback {
       pass,
       &TextureDrawerResources {
         texture: &state.target_texture,
-        bind_groups: &[]
+        bind_groups: &[],
       },
     );
   }

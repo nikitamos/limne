@@ -38,12 +38,7 @@ impl Default for Particle {
 
 impl AsBuffer for &[Particle] {
   fn as_bytes_buffer(&self) -> &[u8] {
-    unsafe {
-      slice::from_raw_parts(
-        self.as_ptr().cast(),
-        std::mem::size_of_val(*self),
-      )
-    }
+    unsafe { slice::from_raw_parts(self.as_ptr().cast(), std::mem::size_of_val(*self)) }
   }
 }
 
@@ -97,13 +92,13 @@ impl<'a> RenderTarget<'a> for SphSolverGpu {
       timestamp_writes: None,
     });
     self.setup_groups_for_compute(&self.density_pressure, resources, &mut pass);
-    pass.dispatch_workgroups(self.count, 1, 1);
+    pass.dispatch_workgroups(self.count / 8, 1, 1);
 
     self.setup_groups_for_compute(&self.pressure_forces, resources, &mut pass);
-    pass.dispatch_workgroups(self.count, 1, 1);
+    pass.dispatch_workgroups(self.count / 8, 1, 1);
 
     self.setup_groups_for_compute(&self.integrate_forces, resources, &mut pass);
-    pass.dispatch_workgroups(self.count, 1, 1);
+    pass.dispatch_workgroups(self.count / 8, 1, 1);
   }
 
   fn render_into_pass(&self, _pass: &mut wgpu::RenderPass, _resources: &'a Self::RenderResources) {

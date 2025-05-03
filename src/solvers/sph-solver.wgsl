@@ -68,7 +68,7 @@ fn intrp_density(at: vec3<f32>) -> f32 {
   return sum;
 }
 
-@compute @workgroup_size(1)
+@compute @workgroup_size(8)
 fn density_pressure(@builtin(global_invocation_id) idx: vec3u) {
   let num = idx.x;
   // Density
@@ -82,7 +82,7 @@ fn density_pressure(@builtin(global_invocation_id) idx: vec3u) {
   pressure[num] = p;
 }
 
-@compute @workgroup_size(1)
+@compute @workgroup_size(8)
 fn pressure_forces(@builtin(global_invocation_id) idx: vec3u) {
   let i = idx.x;
   let els = arrayLength(&pressure);
@@ -110,7 +110,7 @@ fn project_on(a: vec3f, direction: vec3f) -> vec3f {
   return normalize(direction) * dot(a, direction) / length(direction);
 }
 
-@compute @workgroup_size(1)
+@compute @workgroup_size(8)
 fn integrate_forces(@builtin(global_invocation_id) idx: vec3u) {
   let i = idx.x;
   let els = arrayLength(&pressure);
