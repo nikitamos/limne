@@ -1,4 +1,4 @@
-use limne::with;
+use crate::with;
 
 use wgpu::{
   vertex_attr_array, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,

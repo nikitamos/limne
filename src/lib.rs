@@ -1,3 +1,8 @@
+#![feature(option_zip)]
+#![feature(duration_millis_float)]
+#![feature(associated_type_defaults)]
+#![feature(more_float_constants)]
+#![feature(more_qualified_paths)]
 #[macro_export]
 macro_rules! with {
   ($x:ident: $($($fields:ident).* = $val: expr), *) => {
@@ -8,3 +13,5 @@ macro_rules! with {
       }
   };
 }
+pub mod render;
+pub mod solvers;

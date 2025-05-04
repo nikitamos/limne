@@ -1,4 +1,4 @@
-use wgpu::{CommandEncoderDescriptor, RenderPass, TextureFormat};
+use wgpu::{RenderPass, TextureFormat};
 
 pub trait ExternalResources<'a> {
   // fn update(&mut self, dt: f32, device: &wgpu::Device, queue: &wgpu::Queue) {}
@@ -35,16 +35,6 @@ pub trait RenderTarget<'a> {
     resources: &'a Self::UpdateResources,
     encoder: &mut wgpu::CommandEncoder,
   );
-  async fn update_async(
-    &mut self,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    resources: &'a Self::UpdateResources,
-  ) -> wgpu::CommandBuffer {
-    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor { label: None });
-    self.update(device, queue, resources, &mut encoder);
-    encoder.finish()
-  }
   /// This function is called when the render target texture is resized
   fn resized(
     &mut self,

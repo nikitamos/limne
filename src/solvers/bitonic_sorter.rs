@@ -64,7 +64,7 @@ mod test {
     let (mut buf, obuf) = particle_gpu(array, &device).await;
 
     buf.write(queue);
-    let sorter = ParticleBitonicSorter::new(&device, queue, buf.cur_layout());
+    let sorter = ParticleBitonicSorter::new(&device, buf.cur_layout());
     let mut encoder =
       device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
     sorter.sort(&mut encoder, buf.cur_group(), 1024);
@@ -104,7 +104,7 @@ mod test {
     let (mut buf, obuf) = particle_gpu(array, &device).await;
 
     buf.write(queue);
-    let sorter = ParticleBitonicSorter::new(&device, queue, buf.cur_layout());
+    let sorter = ParticleBitonicSorter::new(&device, buf.cur_layout());
     let mut encoder =
       device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
     let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
@@ -165,7 +165,7 @@ mod test {
     let (mut buf, obuf) = particle_gpu(array, &device).await;
 
     buf.write(queue);
-    let sorter = ParticleBitonicSorter::new(&device, queue, buf.cur_layout());
+    let sorter = ParticleBitonicSorter::new(&device, buf.cur_layout());
     let mut encoder =
       device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
     sorter.sort(&mut encoder, buf.cur_group(), COUNT as u32);
@@ -242,7 +242,6 @@ pub struct ParticleBitonicSorter {
 impl ParticleBitonicSorter {
   pub fn new(
     device: &wgpu::Device,
-    queue: &wgpu::Queue,
     particle_layout: &wgpu::BindGroupLayout,
   ) -> ParticleBitonicSorter {
     let ref module = device.create_shader_module(wgpu::include_wgsl!("bitonic-sorter-local.wgsl"));

@@ -19,14 +19,14 @@ pub struct Particle {
   pub density: f32,
   pub velocity: Vector3<f32>,
   _padding1: u32,
-  forces: Vector3<f32>,
+  _forces: Vector3<f32>,
   _padding2: u32,
 }
 
 impl Default for Particle {
   fn default() -> Self {
     Self {
-      forces: Vector3::zero(),
+      _forces: Vector3::zero(),
       pos: Point3::origin(),
       density: 1.0,
       _padding1: 0,

@@ -46,7 +46,7 @@ impl<'a> RenderTarget<'a> for Gizmo {
 
   fn init(
     device: &wgpu::Device,
-    queue: &wgpu::Queue,
+    _queue: &wgpu::Queue,
     resources: &'a Self::RenderResources,
     format: &wgpu::TextureFormat,
     _: Self::InitResources,
@@ -176,10 +176,10 @@ impl<'a> RenderTarget<'a> for Gizmo {
 
   fn update(
     &mut self,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    global: &'a Self::RenderResources,
-    encoder: &mut wgpu::CommandEncoder,
+    _device: &wgpu::Device,
+    _queue: &wgpu::Queue,
+    _global: &'a Self::RenderResources,
+    _encoder: &mut wgpu::CommandEncoder,
   ) {
     // nop
   }

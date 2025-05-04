@@ -1,20 +1,12 @@
-#![feature(option_zip)]
-#![feature(duration_millis_float)]
-#![feature(associated_type_defaults)]
-#![feature(more_float_constants)]
-#![feature(more_qualified_paths)]
-
 use eframe::{AppCreator, NativeOptions};
 use egui_wgpu::{WgpuConfiguration, WgpuSetup, WgpuSetupExisting};
-use render::application::App;
-use solvers::{
+
+use limne::render::application::App;
+use limne::solvers::{
   bitonic_sorter::{LOCAL_ARRAY_SIZE, LOCAL_PASS_SIZE},
   sph_solver_gpu::Particle,
 };
 use wgpu::*;
-
-mod render;
-mod solvers;
 
 async fn create_wgpu_setup() -> WgpuSetup {
   let required_limits = Limits {

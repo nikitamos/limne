@@ -3,11 +3,11 @@ use core::slice;
 use cgmath::{Matrix, Matrix4};
 
 pub mod application;
-mod camera;
+pub mod camera;
 pub mod render_target;
-mod state;
+pub mod state;
 pub mod swapchain;
-mod targets;
+pub mod targets;
 pub mod texture_provider;
 
 pub trait AsBuffer {
