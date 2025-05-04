@@ -1,21 +1,22 @@
 use wgpu::{
-  ComputePassDescriptor, ComputePipelineDescriptor, PipelineCompilationOptions,
-  PipelineLayoutDescriptor, PushConstantRange, ShaderModuleDescriptor, ShaderStages,
+  ComputePassDescriptor, ComputePipelineDescriptor, PipelineLayoutDescriptor, PushConstantRange,
+  ShaderStages,
 };
 
 /// Count of workgroups in a local pass that sorts subarrays of length `2*LOCAL_PASS_SIZE`
 /// and performs disperse using local memory optimizations.
-pub const LOCAL_PASS_SIZE: usize = 512;
+pub const LOCAL_PASS_SIZE: u32 = 512;
+pub const LOCAL_ARRAY_SIZE: u32 = 2 * LOCAL_PASS_SIZE;
+const LOG_LOCAL_ARRAY_SIZE: u32 = LOCAL_ARRAY_SIZE.trailing_zeros();
+pub const GLOBAL_PASS_SIZE: u32 = 64;
 
 #[cfg(test)]
 mod test {
   use core::slice;
-  use std::sync::Arc;
 
   use rand::distr::Distribution;
   use wgpu::{
-    core::device::queue, BufferUsages, InstanceDescriptor, Limits, RequestAdapterOptions,
-    ShaderStages,
+    BufferUsages, Features, InstanceDescriptor, Limits, RequestAdapterOptions, ShaderStages,
   };
 
   use crate::{
@@ -43,8 +44,10 @@ mod test {
             max_compute_invocations_per_workgroup: 512,
             max_compute_workgroup_size_x: 512,
             max_compute_workgroup_storage_size: size_of::<Particle>() as u32 * 1024,
+            max_push_constant_size: 8,
             ..Default::default()
           },
+          required_features: Features::PUSH_CONSTANTS,
           ..Default::default()
         },
         None,
@@ -57,30 +60,13 @@ mod test {
   async fn gpu_bitonic_sort_1024() -> Result<(), ()> {
     let (device, ref mut queue) = setup_wgpu().await?;
     let array = particle_array(1024, -20.0, 500.0).await;
-    let mut buf = SwapBuffers::init_with(
-      array.clone(),
-      &device,
-      SwapBuffersDescriptor {
-        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::COPY_SRC,
-        visibility: ShaderStages::COMPUTE,
-        ty: wgpu::BufferBindingType::Storage { read_only: false },
-        has_dynamic_offset: false,
-      },
-    );
-
-    let obuf = Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
-      label: Some("outbuf"),
-      size: 48 * 1024 as u64,
-      usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
-      mapped_at_creation: false,
-    }));
+    let (mut buf, obuf) = particle_gpu(array, &device).await;
 
     buf.write(queue);
-    // queue.submit([]);
     let sorter = ParticleBitonicSorter::new(&device, queue, buf.cur_layout());
     let mut encoder =
       device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-    sorter.sort_1024(&mut encoder, buf.cur_group());
+    sorter.sort(&mut encoder, buf.cur_group(), 1024);
     let cmd = encoder.finish();
     let mut e = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
     e.copy_buffer_to_buffer(buf.cur_buf(), 0, &obuf, 0, 48 * 1024);
@@ -94,19 +80,12 @@ mod test {
         .slice(..)
         .map_async(wgpu::MapMode::Read, move |a| unsafe {
           a.unwrap();
-          let v: Vec<_> = slice::from_raw_parts::<Particle>(
+          let v = slice::from_raw_parts::<Particle>(
             obuf.slice(..).get_mapped_range().as_ptr().cast(),
             1024,
-          )
-          .iter()
-          .map(|p| p.density)
-          .collect();
-          let mut prev = -f32::INFINITY;
-          for (i, e) in v.iter().enumerate() {
-            if prev > *e {
-              panic!("Array is not sorted: v[{i}] = {e} > {prev}\nNote: full array is {v:?}");
-            }
-            prev = *e;
+          );
+          if let Err(fail) = is_sorted(v) {
+            panic!("Array is not sorted. First element out of order has index {fail}");
           }
 
           obuf.unmap();
@@ -115,6 +94,124 @@ mod test {
     tokio::spawn(async move { device.poll(wgpu::MaintainBase::Wait) });
 
     Ok(())
+  }
+
+  #[tokio::test]
+  async fn gpu_bitonic_sort_local_x2() -> Result<(), ()> {
+    let (device, ref mut queue) = setup_wgpu().await?;
+    let array = particle_array(2048, 0., 2048.).await;
+    let (mut buf, obuf) = particle_gpu(array, &device).await;
+
+    buf.write(queue);
+    let sorter = ParticleBitonicSorter::new(&device, queue, buf.cur_layout());
+    let mut encoder =
+      device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+    sorter.sort_local_encoder(&mut encoder, buf.cur_group(), 2);
+    let cmd = encoder.finish();
+    let mut e = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+    e.copy_buffer_to_buffer(buf.cur_buf(), 0, &obuf, 0, 48 * 2048);
+    queue.submit([cmd]);
+    queue.submit([e.finish()]);
+
+    {
+      let obuf = obuf.clone();
+      obuf
+        .clone()
+        .slice(..)
+        .map_async(wgpu::MapMode::Read, move |a| unsafe {
+          a.unwrap();
+          let v = slice::from_raw_parts::<Particle>(
+            obuf.slice(..).get_mapped_range().as_ptr().cast(),
+            2048,
+          );
+          if let Err(fail) = is_sorted(&v[..1024]) {
+            panic!("First half is not sorted. First element out of order has index {fail}");
+          }
+          if let Err(fail) = is_sorted(&v[1024..]) {
+            panic!("Second half is not sorted. First element out of order has index {fail}");
+          }
+
+          obuf.unmap();
+        });
+    }
+    tokio::spawn(async move { device.poll(wgpu::MaintainBase::Wait) });
+
+    Ok(())
+  }
+
+  fn is_sorted(p: &[Particle]) -> Result<(), usize> {
+    let mut prev = -f32::INFINITY;
+    for (i, e) in p.iter().enumerate() {
+      if prev > e.density {
+        return Err(i);
+      }
+      prev = e.density;
+    }
+    Ok(())
+  }
+
+  #[tokio::test]
+  async fn gpu_bitonic_sort_16384() -> Result<(), ()> {
+    const COUNT: usize = 16384;
+    let (device, ref mut queue) = setup_wgpu().await?;
+    let array = particle_array(COUNT, -8192., -42.).await;
+    let (mut buf, obuf) = particle_gpu(array, &device).await;
+
+    buf.write(queue);
+    let sorter = ParticleBitonicSorter::new(&device, queue, buf.cur_layout());
+    let mut encoder =
+      device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+    sorter.sort(&mut encoder, buf.cur_group(), COUNT as u32);
+    let cmd = encoder.finish();
+    let mut e = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+    e.copy_buffer_to_buffer(buf.cur_buf(), 0, &obuf, 0, 48 * COUNT as u64);
+    queue.submit([cmd]);
+    queue.submit([e.finish()]);
+
+    {
+      let obuf = obuf.clone();
+      obuf
+        .clone()
+        .slice(..)
+        .map_async(wgpu::MapMode::Read, move |a| unsafe {
+          a.unwrap();
+          let v = slice::from_raw_parts::<Particle>(
+            obuf.slice(..).get_mapped_range().as_ptr().cast(),
+            COUNT,
+          );
+          if let Err(fail) = is_sorted(&v) {
+            panic!("The array is not sorted. First element out of order has index {fail}");
+          }
+          obuf.unmap();
+        });
+    }
+    tokio::spawn(async move { device.poll(wgpu::MaintainBase::Wait) });
+
+    Ok(())
+  }
+
+  async fn particle_gpu(
+    array: Vec<Particle>,
+    device: &wgpu::Device,
+  ) -> (SwapBuffers<Vec<Particle>>, wgpu::Buffer) {
+    let buf = SwapBuffers::init_with(
+      array.clone(),
+      device,
+      SwapBuffersDescriptor {
+        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+        visibility: ShaderStages::COMPUTE,
+        ty: wgpu::BufferBindingType::Storage { read_only: false },
+        has_dynamic_offset: false,
+      },
+    );
+
+    let obuf = device.create_buffer(&wgpu::BufferDescriptor {
+      label: Some("outbuf"),
+      size: 48 * array.len() as u64,
+      usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+      mapped_at_creation: false,
+    });
+    (buf, obuf)
   }
 
   async fn particle_array(count: usize, min: f32, max: f32) -> Vec<Particle> {
@@ -168,24 +265,6 @@ mod test {
     }
   }
 
-  #[test]
-  fn cpu_bitonic_sort_4() {
-    let mut a = [2, 3, 1, 4];
-    let mut b = a.clone();
-    cpu_serial_bitonic_sort(&mut b);
-    a.sort();
-    assert_eq!(a, b);
-  }
-
-  #[test]
-  fn cpu_bitonic_sort_64() {
-    let mut a = array::<64>(-20, 20);
-    let mut b = a.clone();
-    a.sort();
-    cpu_serial_bitonic_sort(&mut b);
-    assert_eq!(a, b);
-  }
-
   fn array<const N: usize>(min: i32, max: i32) -> [i32; N] {
     let mut rng = rand::rng();
     let d = rand::distr::Uniform::new_inclusive(min, max).unwrap();
@@ -211,6 +290,8 @@ mod test {
 pub struct ParticleBitonicSorter {
   flip_local: wgpu::ComputePipeline,
   disperse_local: wgpu::ComputePipeline,
+  flip_global: wgpu::ComputePipeline,
+  disperse_global: wgpu::ComputePipeline,
 }
 
 impl ParticleBitonicSorter {
@@ -219,17 +300,13 @@ impl ParticleBitonicSorter {
     queue: &wgpu::Queue,
     particle_layout: &wgpu::BindGroupLayout,
   ) -> ParticleBitonicSorter {
-    let module = device.create_shader_module(wgpu::include_wgsl!("bitonic-sorter.wgsl"));
-    let module = &module;
-    let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-      label: Some("BitonicSorter layout"),
+    let ref module = device.create_shader_module(wgpu::include_wgsl!("bitonic-sorter-local.wgsl"));
+    let local_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+      label: Some("BitonicSorter_local"),
       bind_group_layouts: &[particle_layout],
-      push_constant_ranges: &[/*PushConstantRange {
-        stages: wgpu::ShaderStages::COMPUTE,
-        range: 0..3,
-      }*/],
+      push_constant_ranges: &[],
     });
-    let layout = Some(&layout);
+    let layout = Some(&local_layout);
     let flip_local = device.create_compute_pipeline(&ComputePipelineDescriptor {
       label: Some("BitonicSorter::flip_local"),
       layout,
@@ -246,31 +323,126 @@ impl ParticleBitonicSorter {
       compilation_options: Default::default(),
       cache: None,
     });
+
+    let ref module = device.create_shader_module(wgpu::include_wgsl!("bitonic-sorter-global.wgsl"));
+    let global_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+      label: Some("BitonicSorter_global"),
+      bind_group_layouts: &[particle_layout],
+      push_constant_ranges: &[PushConstantRange {
+        stages: ShaderStages::COMPUTE,
+        range: 0..8,
+      }],
+    });
+    let layout = Some(&global_layout);
+    let flip_global = device.create_compute_pipeline(&ComputePipelineDescriptor {
+      label: Some("BitonicSorter::flip_global"),
+      layout,
+      module,
+      entry_point: Some("flip_global"),
+      compilation_options: Default::default(),
+      cache: None,
+    });
+    let disperse_global = device.create_compute_pipeline(&ComputePipelineDescriptor {
+      label: Some("BitonicSorter::disperse_global"),
+      layout,
+      module,
+      entry_point: Some("disperse_global"),
+      compilation_options: Default::default(),
+      cache: None,
+    });
+
     ParticleBitonicSorter {
       flip_local,
       disperse_local,
+      flip_global,
+      disperse_global,
     }
   }
-  fn sort_1024(&self, encoder: &mut wgpu::CommandEncoder, particles: &wgpu::BindGroup) {
+  #[deprecated]
+  fn sort_local_encoder(
+    &self,
+    encoder: &mut wgpu::CommandEncoder,
+    particles: &wgpu::BindGroup,
+    count_groups: u32,
+  ) {
     let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
       label: Some("sort1024"),
       timestamp_writes: None,
     });
+    self.sort_local(&mut pass, particles, count_groups);
+  }
+
+  fn sort_local(
+    &self,
+    pass: &mut wgpu::ComputePass,
+    particles: &wgpu::BindGroup,
+    count_groups: u32,
+  ) {
     pass.set_pipeline(&self.flip_local);
     pass.set_bind_group(0, particles, &[]);
-    pass.dispatch_workgroups(1, 1, 1);
+    pass.dispatch_workgroups(count_groups, 1, 1);
   }
-  pub fn set_buffer(&self, device: &wgpu::Device, buffer: &wgpu::Buffer) {
-    todo!()
+
+  fn disperse_local(
+    &self,
+    pass: &mut wgpu::ComputePass,
+    particles: &wgpu::BindGroup,
+    count_groups: u32,
+  ) {
+    pass.set_pipeline(&self.disperse_local);
+    pass.set_bind_group(0, particles, &[]);
+    pass.dispatch_workgroups(count_groups, 1, 1);
   }
-  pub fn sort(&self, encoder: &mut wgpu::CommandEncoder, particles: &wgpu::BindGroup) {
-    {
-      let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
-        label: Some("flip local CP"),
-        timestamp_writes: None,
-      });
-      pass.set_push_constants(0, &0u32.to_ne_bytes());
-      // pass.dis
+
+  #[inline(always)]
+  fn full_disperse_global(
+    &self,
+    pass: &mut wgpu::ComputePass,
+    particles: &wgpu::BindGroup,
+    t: u32,
+    k: u32,
+  ) {
+    // FIXME: if sort ever fails, remove `+1`
+    for q in ((LOG_LOCAL_ARRAY_SIZE + 1)..=(k - t)).rev() {
+      pass.set_pipeline(&self.disperse_global);
+      pass.set_bind_group(0, particles, &[]);
+      pass.set_push_constants(0, &Self::pack(k, q));
+      pass.dispatch_workgroups((1 << (k - 1)) / GLOBAL_PASS_SIZE, 1, 1);
+    }
+    self.disperse_local(pass, particles, 1 << (k - LOG_LOCAL_ARRAY_SIZE));
+  }
+  fn pack(a: u32, b: u32) -> [u8; 8] {
+    unsafe { std::mem::transmute([a, b]) }
+  }
+  #[inline(always)]
+  fn single_flip_global(
+    &self,
+    pass: &mut wgpu::ComputePass,
+    particles: &wgpu::BindGroup,
+    t: u32,
+    k: u32,
+  ) {
+    debug_assert!(k >= GLOBAL_PASS_SIZE.trailing_zeros());
+    pass.set_pipeline(&self.flip_global);
+    pass.set_push_constants(0, &Self::pack(k, t));
+    pass.set_bind_group(0, particles, &[]);
+    pass.dispatch_workgroups((1 << (k - 1)) / GLOBAL_PASS_SIZE as u32, 1, 1);
+  }
+  pub fn sort(&self, encoder: &mut wgpu::CommandEncoder, particles: &wgpu::BindGroup, count: u32) {
+    assert!(
+      count >= LOCAL_ARRAY_SIZE && count.count_ones() == 1,
+      "`count` must be a power of 2 greater than {LOCAL_ARRAY_SIZE}, got {count}"
+    );
+    let ref mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+      label: Some("BitonicSort::sort(full)"),
+      timestamp_writes: None,
+    });
+
+    let k = count.trailing_zeros();
+    self.sort_local(pass, particles, count >> LOG_LOCAL_ARRAY_SIZE);
+    for t in (0..=(k - LOG_LOCAL_ARRAY_SIZE)).rev() {
+      self.single_flip_global(pass, particles, t, k);
+      self.full_disperse_global(pass, particles, t, k);
     }
   }
 }
