@@ -16,7 +16,7 @@ var<storage, read_write> cur_particles: array<Particle>;
 var<storage, read_write> old_particles: array<Particle>;
 
 fn local_cas(l: u32, r: u32) {
-  if local[l].density > local[r].density {
+  if local[l].pos.x > local[r].pos.x {
     let buf = local[l];
     local[l] = local[r];
     local[r] = buf;

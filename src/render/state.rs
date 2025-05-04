@@ -189,7 +189,7 @@ impl PersistentState {
         },
         format,
         SimInit {
-          count: 12000,
+          count: 32768,
           size: egui::Vec2 {
             x: 1200.0,
             y: 800.0,
@@ -290,7 +290,6 @@ impl CallbackTrait for StateCallback {
     encoder: &mut wgpu::CommandEncoder,
     callback_resources: &mut egui_wgpu::CallbackResources,
   ) -> Vec<wgpu::CommandBuffer> {
-    // UPDATE goes here
     let Some(state) = callback_resources.get_mut::<PersistentState>() else {
       unreachable!()
     };
@@ -302,8 +301,8 @@ impl CallbackTrait for StateCallback {
 
     let buf_vec: Vec<u8> = [size.x, size.y, self.time, self.dt]
       .as_bytes_buffer()
-      .to_owned()
       .into_iter()
+      .copied()
       .chain(self.camera.as_bytes_buffer().to_owned())
       .chain(state.projection.as_bytes_buffer().to_owned())
       .collect();

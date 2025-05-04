@@ -12,6 +12,7 @@ async fn create_wgpu_setup() -> WgpuSetup {
   let required_limits = Limits {
     max_bind_groups: 5,
     max_compute_invocations_per_workgroup: LOCAL_PASS_SIZE,
+    max_compute_workgroup_size_x: LOCAL_PASS_SIZE,
     max_compute_workgroup_storage_size: LOCAL_ARRAY_SIZE * size_of::<Particle>() as u32,
     max_push_constant_size: 8,
     ..Default::default()

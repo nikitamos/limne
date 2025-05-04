@@ -19,7 +19,7 @@ var<storage, read_write> old_particles: array<Particle>;
 var<push_constant> p: Params;
 
 fn global_cas(l: u32, r: u32) {
-  if cur_particles[l].density > cur_particles[r].density {
+  if cur_particles[l].pos.x > cur_particles[r].pos.x {
     let buf = cur_particles[l];
     cur_particles[l] = cur_particles[r];
     cur_particles[r] = buf;

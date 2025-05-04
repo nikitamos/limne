@@ -58,6 +58,10 @@ fn laplacian_viscosity(r: f32, h: f32) -> f32 {
   }
 }
 
+fn mpless(l: Particle, r: Particle) -> bool {
+  return l.pos.x < r.pos.x;
+}
+
 fn intrp_density(at: vec3<f32>) -> f32 {
   var sum: f32 = 0.0;
   let els = arrayLength(&old_particles);
@@ -68,7 +72,37 @@ fn intrp_density(at: vec3<f32>) -> f32 {
   return sum;
 }
 
-@compute @workgroup_size(8)
+fn binsearch_pos_x_left(p: Particle) -> u32 {
+  var r = arrayLength(&old_particles);
+  var l = 0u;
+  while (l < r) {
+    let m = l + (r-l) / 2;
+    if mpless(old_particles[m], p) {
+      l = m + 1;
+    } else {
+      r = m;
+    }
+  }
+  return l;
+}
+
+fn binsearch_pos_x_right(p: Particle) -> u32 {
+  var r = arrayLength(&old_particles);
+  var l = 0u;
+  while (l < r) {
+    let m = l + (r-l) / 2;
+    if mpless(p, old_particles[m]) {
+      r = m;
+    } else {
+      l = m + 1;
+    }
+  }
+  return r - 1;
+}
+
+// This constant **must** be kept the same as `solvers::sph_solver_gpu::SOLVER_WG_SIZE`
+const WG_SIZE: u32 = 16;
+@compute @workgroup_size(WG_SIZE)
 fn density_pressure(@builtin(global_invocation_id) idx: vec3u) {
   let num = idx.x;
   // Density
@@ -82,12 +116,27 @@ fn density_pressure(@builtin(global_invocation_id) idx: vec3u) {
   pressure[num] = p;
 }
 
-@compute @workgroup_size(8)
+
+@compute @workgroup_size(WG_SIZE)
 fn pressure_forces(@builtin(global_invocation_id) idx: vec3u) {
   let i = idx.x;
   let els = arrayLength(&pressure);
   cur_particles[i].forces = vec3f(0.);
-  for (var j: u32 = 0; j < els; j += u32(1)) {
+
+  var probe = old_particles[i];
+  probe.pos.x -= params.h;
+  var l = i;
+  while l > 0 && !mpless(old_particles[l], probe) {
+    l -= 1u;
+  }
+  probe.pos.x += params.h * 2;
+  var r = i;
+  while r < els - 1 && !mpless(probe, old_particles[r]) {
+    r += 1u;
+  }
+  // let l = binsearch_pos_x_left(probe);
+  // let r = binsearch_pos_x_right(probe);
+  for (var j: u32 = l; j < r; j += 1u) {
     if (i == j) {
       continue;
     }
@@ -110,7 +159,7 @@ fn project_on(a: vec3f, direction: vec3f) -> vec3f {
   return normalize(direction) * dot(a, direction) / length(direction);
 }
 
-@compute @workgroup_size(8)
+@compute @workgroup_size(WG_SIZE)
 fn integrate_forces(@builtin(global_invocation_id) idx: vec3u) {
   let i = idx.x;
   let els = arrayLength(&pressure);
@@ -142,13 +191,4 @@ fn integrate_forces(@builtin(global_invocation_id) idx: vec3u) {
   }
   cur_particles[i].pos = p;
   cur_particles[i].velocity = v;
-  // if length(cur_particles[i].pos) > 400. {
-  //   let p = cur_particles[i].pos;
-  //   cur_particles[i].pos = 400. * normalize(p);
-  //   cur_particles[i].velocity -= 1.8 * project_on(cur_particles[i].velocity, p);
-  // }
-  // if length(cur_particles[i].pos) != length(cur_particles[i].pos) {
-  //   cur_particles[i].pos = vec3f(0., 0., 0.);
-  // }
-  // cur_particles[i].pos = vec3f(300., 300., 300.);
 }

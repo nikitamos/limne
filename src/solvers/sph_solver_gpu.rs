@@ -13,6 +13,10 @@ use crate::render::{
   AsBuffer,
 };
 
+use super::bitonic_sorter::ParticleBitonicSorter;
+// This constant **must** be kept the same as `WG_SIZE` in the solver shader.
+pub const SOLVER_WG_SIZE: u32 = 16;
+
 #[derive(Clone, Debug)]
 pub struct Particle {
   pub pos: Point3<f32>,
@@ -59,6 +63,7 @@ pub struct SphSolverGpu {
   integrate_forces: ComputePipeline,
   pressure_buf: Buffer,
   pressure_bg: BindGroup,
+  sorter: ParticleBitonicSorter,
   count: u32,
 }
 
@@ -87,18 +92,24 @@ impl<'a> RenderTarget<'a> for SphSolverGpu {
     resources: &'a Self::UpdateResources,
     encoder: &mut wgpu::CommandEncoder,
   ) {
-    let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
-      label: Some("SPH Solver compute pass"),
-      timestamp_writes: None,
-    });
-    self.setup_groups_for_compute(&self.density_pressure, resources, &mut pass);
-    pass.dispatch_workgroups(self.count / 8, 1, 1);
+    {
+      let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+        label: Some("SPH Solver compute pass"),
+        timestamp_writes: None,
+      });
+      self.setup_groups_for_compute(&self.density_pressure, resources, &mut pass);
+      pass.dispatch_workgroups(self.count / SOLVER_WG_SIZE, 1, 1);
 
-    self.setup_groups_for_compute(&self.pressure_forces, resources, &mut pass);
-    pass.dispatch_workgroups(self.count / 8, 1, 1);
+      self.setup_groups_for_compute(&self.pressure_forces, resources, &mut pass);
+      pass.dispatch_workgroups(self.count / SOLVER_WG_SIZE, 1, 1);
 
-    self.setup_groups_for_compute(&self.integrate_forces, resources, &mut pass);
-    pass.dispatch_workgroups(self.count / 8, 1, 1);
+      self.setup_groups_for_compute(&self.integrate_forces, resources, &mut pass);
+      pass.dispatch_workgroups(self.count / SOLVER_WG_SIZE, 1, 1);
+    }
+
+    self
+      .sorter
+      .sort(encoder, resources.pos.cur_group(), self.count);
   }
 
   fn render_into_pass(&self, _pass: &mut wgpu::RenderPass, _resources: &'a Self::RenderResources) {
@@ -198,6 +209,7 @@ impl SphSolverGpu {
       compilation_options: Default::default(),
       cache: None,
     });
+    let sorter = ParticleBitonicSorter::new(device, init_res.3.cur_layout());
     Self {
       density_pressure,
       pressure_forces,
@@ -205,6 +217,7 @@ impl SphSolverGpu {
       pressure_buf,
       pressure_bg,
       count: init_res.0 as u32,
+      sorter,
     }
   }
 }

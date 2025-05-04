@@ -149,10 +149,10 @@ mod test {
   fn is_sorted(p: &[Particle]) -> Result<(), usize> {
     let mut prev = -f32::INFINITY;
     for (i, e) in p.iter().enumerate() {
-      if prev > e.density {
+      if prev > e.pos.x {
         return Err(i);
       }
-      prev = e.density;
+      prev = e.pos.x;
     }
     Ok(())
   }
@@ -226,7 +226,7 @@ mod test {
     let d = rand::distr::Uniform::new_inclusive(min, max).unwrap();
     let mut v = vec![Particle::default(); count];
     for p in v.iter_mut() {
-      p.density = d.sample(&mut rng);
+      p.pos.x = d.sample(&mut rng);
     }
     v
   }
@@ -244,7 +244,7 @@ impl ParticleBitonicSorter {
     device: &wgpu::Device,
     particle_layout: &wgpu::BindGroupLayout,
   ) -> ParticleBitonicSorter {
-    let ref module = device.create_shader_module(wgpu::include_wgsl!("bitonic-sorter-local.wgsl"));
+    let module = &device.create_shader_module(wgpu::include_wgsl!("bitonic-sorter-local.wgsl"));
     let local_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
       label: Some("BitonicSorter_local"),
       bind_group_layouts: &[particle_layout],
@@ -268,7 +268,7 @@ impl ParticleBitonicSorter {
       cache: None,
     });
 
-    let ref module = device.create_shader_module(wgpu::include_wgsl!("bitonic-sorter-global.wgsl"));
+    let module = &device.create_shader_module(wgpu::include_wgsl!("bitonic-sorter-global.wgsl"));
     let global_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
       label: Some("BitonicSorter_global"),
       bind_group_layouts: &[particle_layout],
@@ -314,6 +314,7 @@ impl ParticleBitonicSorter {
     pass.dispatch_workgroups(count_groups, 1, 1);
   }
 
+  #[inline(always)]
   fn disperse_local(
     &self,
     pass: &mut wgpu::ComputePass,
@@ -333,10 +334,10 @@ impl ParticleBitonicSorter {
     t: u32,
     k: u32,
   ) {
+    pass.set_pipeline(&self.disperse_global);
+    pass.set_bind_group(0, particles, &[]);
     // FIXME: if sort ever fails, remove `+1`
     for q in ((LOG_LOCAL_ARRAY_SIZE + 1)..=(k - t)).rev() {
-      pass.set_pipeline(&self.disperse_global);
-      pass.set_bind_group(0, particles, &[]);
       pass.set_push_constants(0, &Self::pack(k, q));
       pass.dispatch_workgroups((1 << (k - 1)) / GLOBAL_PASS_SIZE, 1, 1);
     }
@@ -357,14 +358,14 @@ impl ParticleBitonicSorter {
     pass.set_pipeline(&self.flip_global);
     pass.set_push_constants(0, &Self::pack(k, t));
     pass.set_bind_group(0, particles, &[]);
-    pass.dispatch_workgroups((1 << (k - 1)) / GLOBAL_PASS_SIZE as u32, 1, 1);
+    pass.dispatch_workgroups((1 << (k - 1)) / GLOBAL_PASS_SIZE, 1, 1);
   }
   pub fn sort(&self, encoder: &mut wgpu::CommandEncoder, particles: &wgpu::BindGroup, count: u32) {
     assert!(
       count >= LOCAL_ARRAY_SIZE && count.count_ones() == 1,
-      "`count` must be a power of 2 greater than {LOCAL_ARRAY_SIZE}, got {count}"
+      "`count` must be a power of 2 greater or equal {LOCAL_ARRAY_SIZE}, got {count}"
     );
-    let ref mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+    let pass = &mut encoder.begin_compute_pass(&ComputePassDescriptor {
       label: Some("BitonicSort::sort(full)"),
       timestamp_writes: None,
     });
