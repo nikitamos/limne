@@ -16,7 +16,8 @@ mod test {
 
   use rand::distr::Distribution;
   use wgpu::{
-    BufferUsages, Features, InstanceDescriptor, Limits, RequestAdapterOptions, ShaderStages,
+    BufferUsages, ComputePassDescriptor, Features, InstanceDescriptor, Limits,
+    RequestAdapterOptions, ShaderStages,
   };
 
   use crate::{
@@ -106,7 +107,13 @@ mod test {
     let sorter = ParticleBitonicSorter::new(&device, queue, buf.cur_layout());
     let mut encoder =
       device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-    sorter.sort_local_encoder(&mut encoder, buf.cur_group(), 2);
+    let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+      label: None,
+      timestamp_writes: None,
+    });
+    sorter.sort_local(&mut pass, buf.cur_group(), 2);
+    std::mem::drop(pass);
+
     let cmd = encoder.finish();
     let mut e = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
     e.copy_buffer_to_buffer(buf.cur_buf(), 0, &obuf, 0, 48 * 2048);
@@ -223,68 +230,6 @@ mod test {
     }
     v
   }
-
-  fn cas(a: &mut [i32], l: usize, r: usize) {
-    if a[l] > a[r] {
-      a.swap(l, r);
-    }
-  }
-
-  fn cpu_serial_bitonic_sort(a: &mut [i32]) {
-    assert_eq!(a.len().count_ones(), 1, "Array length must be a power of 2");
-    if a.len() == 1 {
-      return;
-    }
-    let n = a.len();
-    let k = n.trailing_zeros() as usize;
-    for t in (0..=(k - 1)).rev() {
-      // 2^t is count of flip blocks
-      // height of a flip block?
-      let flh = 1 << (k - t);
-      // iterate over flip blocks
-      for flb in 0..(1 << t) {
-        let go = flh * flb;
-        for lo in 0..flh / 2 {
-          cas(a, go + lo, go + flh - lo - 1);
-        }
-      }
-      // <BARRIER>
-      // 'stages'
-      for q in (1..=(k - t)).rev() {
-        // 2^q is the height of disperse block in the stage
-        let dbc = 1 << (k - q);
-        let dbh = 1 << q;
-        for i in 0..dbc {
-          let go = i * dbh;
-          for j in 0..dbh / 2 {
-            cas(a, go + j, go + j + dbh / 2);
-          }
-        }
-        // <BARRIER>
-      }
-    }
-  }
-
-  fn array<const N: usize>(min: i32, max: i32) -> [i32; N] {
-    let mut rng = rand::rng();
-    let d = rand::distr::Uniform::new_inclusive(min, max).unwrap();
-    let mut a = [0; N];
-    for i in a.iter_mut() {
-      *i = d.sample(&mut rng);
-    }
-    a
-  }
-
-  #[test]
-  fn cpu_bitonic_sort_1024x1024() {
-    for _ in 0..1024 {
-      let mut a = array::<1024>(-1000, 1000);
-      let mut b = a.clone();
-      a.sort();
-      cpu_serial_bitonic_sort(&mut b);
-      assert_eq!(a, b);
-    }
-  }
 }
 
 pub struct ParticleBitonicSorter {
@@ -357,19 +302,6 @@ impl ParticleBitonicSorter {
       flip_global,
       disperse_global,
     }
-  }
-  #[deprecated]
-  fn sort_local_encoder(
-    &self,
-    encoder: &mut wgpu::CommandEncoder,
-    particles: &wgpu::BindGroup,
-    count_groups: u32,
-  ) {
-    let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
-      label: Some("sort1024"),
-      timestamp_writes: None,
-    });
-    self.sort_local(&mut pass, particles, count_groups);
   }
 
   fn sort_local(
