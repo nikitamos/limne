@@ -50,7 +50,7 @@ impl eframe::App for App {
         ui.end_row();
 
         ui.label("w");
-        ui.add(egui::Slider::new(&mut self.params.w, 20.0f32..=500.0f32));
+        ui.add(egui::Slider::new(&mut self.params.w, 0.0f32..=500.0f32));
         ui.end_row();
 
         ui.label("t factor");

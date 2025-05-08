@@ -17,7 +17,7 @@ pub struct Gizmo {
   index_buf: wgpu::Buffer,
 }
 
-const A: f32 = 20.0;
+const A: f32 = 2.0;
 const INNER_RADIUS: f32 = 0.5 * A * f32::consts::SQRT_3;
 
 #[rustfmt::skip]
@@ -25,7 +25,7 @@ const AXIS_VERTICES: [f32; 12] = [
     0.0,      0.0,    INNER_RADIUS,
     0.0,   -0.5 * A, -0.5*INNER_RADIUS,
     0.0,   0.5 * A,  -0.5*INNER_RADIUS,
-  200.0,     0.0,         0.0
+  20.0,     0.0,         0.0
 ];
 #[rustfmt::skip]
 const AXIS_INDICES: [u16; 6] = [

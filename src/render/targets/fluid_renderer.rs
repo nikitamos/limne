@@ -1,4 +1,5 @@
 use crate::with;
+use std::clone;
 
 use wgpu::{
   vertex_attr_array, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
@@ -6,7 +7,7 @@ use wgpu::{
   ColorWrites, DepthBiasState, DepthStencilState, Extent3d, FragmentState, MultisampleState,
   RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor,
   RenderPipeline, RenderPipelineDescriptor, ShaderStages, StencilFaceState, StencilState,
-  VertexBufferLayout,
+  TextureFormat::R32Float, VertexBufferLayout,
 };
 
 use crate::{
@@ -32,6 +33,7 @@ pub struct FluidRenderer {
   sphere_tex: TextureProvider,
   normals: TextureProvider,
   sphere_render: RenderPipeline,
+  thickness_render: RenderPipeline,
   zbuf_smoother: TextureDrawer,
   merger: TextureDrawer,
   merge_bgl: BindGroupLayout,
@@ -81,14 +83,14 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
               store: wgpu::StoreOp::Store,
             },
           }),
-          Some(RenderPassColorAttachment {
-            view: &self.thickness,
-            resolve_target: None,
-            ops: wgpu::Operations {
-              load: wgpu::LoadOp::Clear(Color::WHITE),
-              store: wgpu::StoreOp::Store,
-            },
-          }),
+          // Some(RenderPassColorAttachment {
+          //   view: &self.thickness,
+          //   resolve_target: None,
+          //   ops: wgpu::Operations {
+          //     load: wgpu::LoadOp::Clear(Color::BLACK),
+          //     store: wgpu::StoreOp::Store,
+          //   },
+          // }),
         ],
         depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
           view: &self.spheres_zbuf,
@@ -102,6 +104,27 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
         occlusion_query_set: None,
       });
       pass.set_pipeline(&self.sphere_render);
+      pass.set_bind_group(0, resources.global_bg, &[]);
+      pass.set_bind_group(1, resources.params_bg, &[]);
+      pass.set_vertex_buffer(0, resources.pos_buf.slice(..));
+      pass.draw(0..3, 0..(resources.count));
+    }
+    {
+      let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+        label: Some("FluidRender::thickness_pass"),
+        color_attachments: &[Some(RenderPassColorAttachment {
+          view: &self.thickness,
+          resolve_target: None,
+          ops: wgpu::Operations {
+            load: wgpu::LoadOp::Clear(Color::BLACK),
+            store: wgpu::StoreOp::Store,
+          },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+      });
+      pass.set_pipeline(&self.thickness_render);
       pass.set_bind_group(0, resources.global_bg, &[]);
       pass.set_bind_group(1, resources.params_bg, &[]);
       pass.set_vertex_buffer(0, resources.pos_buf.slice(..));
@@ -210,10 +233,11 @@ impl<'a> FluidRenderer {
     let zbuf_smoothed = TextureProvider::new(device, desc.clone());
     desc = with!(desc: label = Some("normals".to_owned()), format = *format, usage = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT);
     let normals = TextureProvider::new(device, desc.clone());
-    desc = with!(desc: label = Some("thickness".to_owned()));
+    desc = with!(desc: label = Some("sphere_tex".to_owned()), format = *format);
+    let sphere_tex = TextureProvider::new(device, desc.clone());
+    desc =
+      with!(desc: label = Some("thickness".to_owned()), format = wgpu::TextureFormat::Rgba16Float);
     let thickness = TextureProvider::new(device, desc.clone());
-    desc = with!(desc: label = Some("sphere_tex".to_owned()));
-    let sphere_tex = TextureProvider::new(device, desc);
 
     let module =
       device.create_shader_module(wgpu::include_wgsl!("shaders/simulation-particles.wgsl"));
@@ -276,24 +300,26 @@ impl<'a> FluidRenderer {
       &sphere_tex,
       &merge_bgl,
     );
+    let sphere_primitive = wgpu::PrimitiveState {
+      topology: wgpu::PrimitiveTopology::TriangleList,
+      strip_index_format: None,
+      front_face: wgpu::FrontFace::Ccw,
+      cull_mode: None, //Some(wgpu::Face::Back),
+      unclipped_depth: false,
+      polygon_mode: wgpu::PolygonMode::Fill,
+      conservative: false,
+    };
+    let sphere_vertex = wgpu::VertexState {
+      module: &module,
+      entry_point: Some("vs_main"),
+      compilation_options: Default::default(),
+      buffers: &[PARTICLE_POS_BUFFER_LAYOUT],
+    };
     let sphere_render = device.create_render_pipeline(&RenderPipelineDescriptor {
       label: Some("Sphere render"),
       layout: Some(&render_layout),
-      vertex: wgpu::VertexState {
-        module: &module,
-        entry_point: Some("vs_main"),
-        compilation_options: Default::default(),
-        buffers: &[PARTICLE_POS_BUFFER_LAYOUT],
-      },
-      primitive: wgpu::PrimitiveState {
-        topology: wgpu::PrimitiveTopology::TriangleList,
-        strip_index_format: None,
-        front_face: wgpu::FrontFace::Ccw,
-        cull_mode: None, //Some(wgpu::Face::Back),
-        unclipped_depth: false,
-        polygon_mode: wgpu::PolygonMode::Fill,
-        conservative: false,
-      },
+      vertex: sphere_vertex.clone(),
+      primitive: sphere_primitive,
       depth_stencil: Some(depth_stencil_state.clone()),
       multisample: MultisampleState {
         count: 1,
@@ -302,20 +328,39 @@ impl<'a> FluidRenderer {
       },
       fragment: Some(wgpu::FragmentState {
         module: &module,
-        entry_point: Some("fs_main"),
+        entry_point: Some("depth_spheretex"),
         compilation_options: Default::default(),
-        targets: &[
-          Some(wgpu::ColorTargetState {
-            format: *format,
-            blend: Some(wgpu::BlendState::REPLACE),
-            write_mask: wgpu::ColorWrites::ALL,
-          }),
-          Some(wgpu::ColorTargetState {
-            format: *format,
-            blend: Some(wgpu::BlendState::REPLACE),
-            write_mask: wgpu::ColorWrites::ALL,
-          }),
-        ],
+        targets: &[Some(normals.color_target())],
+      }),
+      multiview: None,
+      cache: None,
+    });
+
+    let thickness_render = device.create_render_pipeline(&RenderPipelineDescriptor {
+      label: Some("FluidRendere::thick_render"),
+      layout: Some(&render_layout),
+      vertex: sphere_vertex,
+      primitive: sphere_primitive,
+      depth_stencil: None,
+      multisample: MultisampleState {
+        count: 1,
+        mask: !0,
+        alpha_to_coverage_enabled: false,
+      },
+      fragment: Some(FragmentState {
+        module: &module,
+        entry_point: Some("thickness"),
+        compilation_options: Default::default(),
+        targets: &[Some(with!(thickness.color_target() =>
+          blend = Some(wgpu::BlendState {
+            color: wgpu::BlendComponent {
+              src_factor: wgpu::BlendFactor::One,
+              dst_factor: wgpu::BlendFactor::One,
+              operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent::REPLACE,
+          })
+        ))],
       }),
       multiview: None,
       cache: None,
@@ -387,6 +432,7 @@ impl<'a> FluidRenderer {
       sphere_tex,
       normals,
       sphere_render,
+      thickness_render,
       zbuf_smoother,
       merger,
       merge_bgl,

@@ -110,7 +110,7 @@ fn density_pressure(@builtin(global_invocation_id) idx: vec3u) {
   cur_particles[num].density = rho;
   // Pressure
   var p = params.k * (rho - params.rho0);
-  if p != p { // p is NaN
+  if p != p || p < 0.0 { // p is NaN or < 0
     p = 0.;
   }
   pressure[num] = p;
@@ -181,12 +181,12 @@ fn integrate_forces(@builtin(global_invocation_id) idx: vec3u) {
     p.x = clamp(p.x, -w, w);
     v.x = -e * v.x;
   }
-  if p.y < -500. {
-    p.y = -500.;
+  if p.y < -50. {
+    p.y = -50.;
     v.y = -e * v.y;
   }
-  if p.y > 700. {
-    p.y = 700.;
+  if p.y > 70. {
+    p.y = 70.;
     v.y = -e * v.y;
   }
   cur_particles[i].pos = p;

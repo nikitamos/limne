@@ -30,10 +30,10 @@ impl Default for SimulationParams {
       k: 40.0,
       m0: 30.0,
       viscosity: 0.0,
-      h: 20.0,
+      h: 2.0,
       rho0: 5.0,
       e: 0.8,
-      w: 200.0,
+      w: 20.0,
       paused: false,
       draw_particles: true,
       regen_particles: false,
@@ -240,28 +240,18 @@ impl SphSimulation {
   }
 
   fn regenerate_positions(&mut self, device: &wgpu::Device) {
-    let r_distr = rand::distr::Uniform::new(0., 400.0).unwrap();
-
-    let v_distr = rand::distr::Uniform::new(0., 30.).unwrap();
-    let theta = rand::distr::Uniform::new(0., f32::consts::PI).unwrap();
-    let phi = rand::distr::Uniform::new(0., f32::consts::TAU).unwrap();
+    let w_distr = rand::distr::Uniform::new(-200.0, 200.0).unwrap();
 
     let mut parts = vec![Particle::default(); self.count];
 
     parts.par_iter_mut().for_each(|p| {
       let mut rng = rand::rng();
-      let mtheta = rng.sample(theta);
-      let mphi = rng.sample(phi);
-      let r = rng.sample(r_distr);
       p.pos = Point3 {
-        x: r * mtheta.sin() * mphi.cos(),
-        y: r * mtheta.sin() * mphi.sin(),
-        z: r * mtheta.cos(),
+        x: rng.sample(w_distr),
+        y: rng.sample(w_distr),
+        z: rng.sample(w_distr),
       };
 
-      let v = rng.sample(v_distr);
-      let theta = rng.sample(theta);
-      let phi = rng.sample(phi);
       p.velocity = Vector3::zero(); // {
                                     //   x: v * theta.sin() * phi.cos(),
                                     //   y: v * theta.sin() * phi.sin(),

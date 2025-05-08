@@ -12,6 +12,14 @@ macro_rules! with {
         y
       }
   };
+  ($x:expr => $($($fields:ident).* = $val: expr), *) => {
+      {
+        let mut y = $x;
+        // TODO: Reuse arm #0
+        $(y$(.$fields)* = $val;)*
+        y
+      }
+  };
 }
 pub mod render;
 pub mod solvers;

@@ -1,8 +1,9 @@
 use std::ops::Deref;
 
 use wgpu::{
-  Device, Extent3d, Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
-  TextureView, TextureViewDescriptor,
+  BindGroupLayoutEntry, BlendState, ColorTargetState, ColorWrites, Device, Extent3d, Texture,
+  TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView,
+  TextureViewDescriptor,
 };
 
 #[derive(Clone)]
@@ -83,6 +84,15 @@ impl TextureProvider {
   }
   pub fn format(&self) -> TextureFormat {
     self.tex.format()
+  }
+  /// Returns the color target state of the texture view
+  /// to be as a color attachment. Enables [`wgpu::BlendState::REPLACE`], [`wgpu::ColorWrites::ALL`]
+  pub fn color_target(&self) -> ColorTargetState {
+    ColorTargetState {
+      format: self.format(),
+      blend: Some(BlendState::REPLACE),
+      write_mask: ColorWrites::ALL,
+    }
   }
 }
 
