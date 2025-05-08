@@ -259,6 +259,7 @@ pub(crate) struct StateCallback {
   pub time: f32,
   pub params: SimulationParams,
   pub camera: Matrix4<f32>,
+  pub size: egui::Vec2,
 }
 
 impl CallbackTrait for StateCallback {
@@ -285,18 +286,15 @@ impl CallbackTrait for StateCallback {
     &self,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    screen_descriptor: &egui_wgpu::ScreenDescriptor,
+    _screen_descriptor: &egui_wgpu::ScreenDescriptor,
     encoder: &mut wgpu::CommandEncoder,
     callback_resources: &mut egui_wgpu::CallbackResources,
   ) -> Vec<wgpu::CommandBuffer> {
     let Some(state) = callback_resources.get_mut::<PersistentState>() else {
       unreachable!()
     };
-    let size = egui::Vec2 {
-      x: screen_descriptor.size_in_pixels[0] as f32,
-      y: screen_descriptor.size_in_pixels[1] as f32,
-    };
-    state.check_resize(size, device, self);
+    let size = self.size;
+    state.check_resize(self.size, device, self);
 
     let buf_vec: Vec<u8> = [size.x, size.y, self.time, self.dt]
       .as_bytes_buffer()

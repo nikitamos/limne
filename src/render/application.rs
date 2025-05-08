@@ -26,6 +26,7 @@ impl eframe::App for App {
     self.time = time;
 
     egui::SidePanel::left("simulation_props").show(ctx, |ui| {
+      log::trace!("left: {}", ui.available_size());
       Grid::new("sim_props_grid").show(ui, |ui| {
         ui.label("K");
         ui.add(egui::Slider::new(&mut self.params.k, K_RANGE));
@@ -143,6 +144,7 @@ Looks at: ({:.1}, {:.1}, {:.1})\nr={:.1}",
             time: (time - self.startup_time).as_secs_f32(),
             params: self.params,
             camera: self.controller.get_camera(),
+            size: rect.size()
           },
         ));
         self.viewport_rect = rect;
