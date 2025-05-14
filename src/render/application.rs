@@ -135,7 +135,6 @@ Looks at: ({:.1}, {:.1}, {:.1})\nr={:.1}",
           .handle_drag(drag)
           .move_center_local(delta)
           .move_radius(scroll.y * -0.5);
-        // .look_at(Point3::new(0.0, 0.0, 0.0)) //-rect.width() / 2., -rect.height() / 2., 0.))
 
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
           rect,

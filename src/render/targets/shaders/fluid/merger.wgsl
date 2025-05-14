@@ -51,11 +51,9 @@ fn fs_main(in: VOut) -> FOut {
   var fresnel = vec4f(0.);
   let n = normalize(textureSample(normal, smp, in.texcoord.xy));
   let v = 0.0;
-  // o.col = textureSample(sphere_tex, smp, in.texcoord.xy);
+  o.col = textureSample(sphere_tex, smp, in.texcoord.xy);
   o.depth = textureSample(zbuf_smoothed, smp, in.texcoord.xy);
   // o.col = vec4(vec3(o.depth), 1.0);
-  o.col = vec4(textureSample(thickness, smp, in.texcoord.xy).xxx, 1.0) * (
-    1.0
-  );
+  o.col *= vec4(textureSample(thickness, smp, in.texcoord.xy).xxx, 1.0);
   return o;
 }
