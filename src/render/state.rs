@@ -25,7 +25,7 @@ use super::{
   AsBuffer,
 };
 
-pub(super) struct PersistentState {
+pub struct PersistentState {
   simulation: SphSimulation,
   global_layout: BindGroupLayout,
   global_bind: BindGroup,
@@ -59,7 +59,7 @@ pub const GL_TRANSFORM_TO_WGPU: Matrix4<f32> =
 
 /// This structure is responsible for storing WGPU resources for the clear pass
 impl PersistentState {
-  pub fn create(rstate: &RenderState) -> Self {
+  pub fn create_egui(rstate: &RenderState) -> Self {
     let RenderState {
       device,
       target_format: format,
@@ -67,6 +67,56 @@ impl PersistentState {
       ..
     } = rstate;
 
+    Self::create_raw(device, format, queue)
+  }
+
+  fn resize(&mut self, size: egui::Vec2, device: &wgpu::Device, callback: &StateCallback) {
+    if size.x > 0. && size.y > 0. {
+      self.size = size;
+      let new_tex_size = wgpu::Extent3d {
+        width: size.x as u32,
+        height: size.y as u32,
+        depth_or_array_layers: 1,
+      };
+      self.target_texture.resize(device, new_tex_size);
+      self.depth_texture.resize(device, new_tex_size);
+      self.simulation.resized(
+        device,
+        size,
+        &SimUpdateResources {
+          params: &callback.params,
+          global_group: &self.global_bind,
+          global_layout: &self.global_layout,
+          depth_stencil: &self.depth_state,
+          dt: callback.dt,
+        },
+        self.format,
+      );
+      self.texture_drawer.resized(device, &self.target_texture);
+
+      self.projection =
+        GL_TRANSFORM_TO_WGPU * cgmath::perspective(Deg(60.0), size.x / size.y, 10., 500.);
+    }
+  }
+
+  /// If `size` is different from stored internally,
+  /// calls [`Self::resize`]
+  pub fn check_resize(
+    &mut self,
+    size: egui::Vec2,
+    device: &wgpu::Device,
+    callback: &StateCallback,
+  ) {
+    if size != self.size {
+      self.resize(size, device, callback);
+    }
+  }
+
+  pub fn create_raw(
+    device: &wgpu::Device,
+    format: &TextureFormat,
+    queue: &wgpu::Queue,
+  ) -> PersistentState {
     let global_buf = device.create_buffer(&BufferDescriptor {
       label: None,
       size: GLOBAL_BIND_SIZE,
@@ -210,51 +260,9 @@ impl PersistentState {
       texture_drawer,
     }
   }
-
-  fn resize(&mut self, size: egui::Vec2, device: &wgpu::Device, callback: &StateCallback) {
-    if size.x > 0. && size.y > 0. {
-      self.size = size;
-      let new_tex_size = wgpu::Extent3d {
-        width: size.x as u32,
-        height: size.y as u32,
-        depth_or_array_layers: 1,
-      };
-      self.target_texture.resize(device, new_tex_size);
-      self.depth_texture.resize(device, new_tex_size);
-      self.simulation.resized(
-        device,
-        size,
-        &SimUpdateResources {
-          params: &callback.params,
-          global_group: &self.global_bind,
-          global_layout: &self.global_layout,
-          depth_stencil: &self.depth_state,
-          dt: callback.dt,
-        },
-        self.format,
-      );
-      self.texture_drawer.resized(device, &self.target_texture);
-
-      self.projection =
-        GL_TRANSFORM_TO_WGPU * cgmath::perspective(Deg(60.0), size.x / size.y, 10., 500.);
-    }
-  }
-
-  /// If `size` is different from stored internally,
-  /// calls [`Self::resize`]
-  pub fn check_resize(
-    &mut self,
-    size: egui::Vec2,
-    device: &wgpu::Device,
-    callback: &StateCallback,
-  ) {
-    if size != self.size {
-      self.resize(size, device, callback);
-    }
-  }
 }
 
-pub(crate) struct StateCallback {
+pub struct StateCallback {
   pub dt: f32,
   pub time: f32,
   pub params: SimulationParams,

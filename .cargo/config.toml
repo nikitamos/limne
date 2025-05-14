@@ -1,0 +1,4 @@
+[alias]
+r = "run --bin limne"
+t = "test --package limne"
+amnis = "run --bin amnis"
