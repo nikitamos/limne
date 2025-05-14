@@ -1,5 +1,6 @@
 {
   "cSpell.words": [
+    "amnis",
     "bgle",
     "Bitonic",
     "celldims",
@@ -9,6 +10,7 @@
     "limne",
     "multisampled",
     "Texel",
+    "wgpu",
     "zbuf"
   ]
 }

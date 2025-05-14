@@ -160,7 +160,7 @@ Looks at: ({:.1}, {:.1}, {:.1})\nr={:.1}",
 impl App {
   pub fn new(cc: &CreationContext<'_>) -> Self {
     let wgpu_render_state = cc.wgpu_render_state.as_ref().unwrap();
-    let state = PersistentState::create(wgpu_render_state);
+    let state = PersistentState::create_egui(wgpu_render_state);
     wgpu_render_state
       .renderer
       .write()
