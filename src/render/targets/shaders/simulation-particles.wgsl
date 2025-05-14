@@ -69,11 +69,11 @@ fn depth_spheretex(in: VertexOutput) -> FragmentOutput {
   let back_eye = pixel_pos - 2*vec4(0., 0., pixel_pos.z, 0.0);
   let back_clip = g.projection * back_eye;
   
-  out.col = mix(vec4(0.0, 0.0, 1.0, 1.0), vec4(1., 0., 0., 1.), saturate(abs(in.rho) / 2. / params.rho0));
+  // out.col = mix(vec4(0.0, 0.0, 1.0, 1.0), vec4(1., 0., 0., 1.), saturate(abs(in.rho) / 2. / params.rho0));
   let diffuse = max(0.0, dot(light_dir, normalize(n)));
-  out.col *= diffuse;
+  // out.col *= diffuse;
   out.depth = clip_pos.z / clip_pos.w;
-  // 
+  out.col = vec4f(normalize(n), 1.0);
   
   return out;
 }
