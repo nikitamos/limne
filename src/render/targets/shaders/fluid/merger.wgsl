@@ -43,6 +43,7 @@ fn ffresnel(cos_theta: f32) -> f32 {
 const SCENE_COLOR: vec3f = vec3f(1.0, 0.0, 0.0);
 const FLUID_COLOR: vec3f = vec3f(0.07, 0.075, 1.0);
 const LIGHT_DIR = vec3f(0.0, 1.41*0.5, -1.41*0.5);
+const THICKNESS_THRESHOLD = 1./10.;
 
 @fragment
 fn fs_main(in: VOut) -> FOut {
@@ -54,12 +55,14 @@ fn fs_main(in: VOut) -> FOut {
   let b = SCENE_COLOR;
   let f = ffresnel(dot(n, v));
   let specular = pow(dot(n, LIGHT_DIR), 1.8);
+  if (t < THICKNESS_THRESHOLD) {
+    discard;
+  }
 
-  o.col = vec4(
-      a * (1 - f)
-    + b * f
-    + specular*vec3(0.0, 1.0, 0.0),
-    1.0);
   o.depth = textureSample(zbuf_smoothed, smp, in.texcoord.xy);
+  let phong = a * (1 - f)
+    + b * f
+    + specular*vec3(0.0, 1.0, 0.0);
+  o.col = vec4(phong*o.depth, 1.0);
   return o;
 }

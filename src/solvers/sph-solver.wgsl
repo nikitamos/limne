@@ -151,8 +151,9 @@ fn pressure_forces(@builtin(global_invocation_id) idx: vec3u) {
   if length(cur_particles[i].forces) != length(cur_particles[i].forces) {
     cur_particles[i].forces = vec3f(0.);
   }
-  cur_particles[i].forces.y -= 0.7;
+  cur_particles[i].forces.y -= 3.0;
   cur_particles[i].forces *= params.m0;
+  // cur_particles[i].forces += 20.0*normalize(vec3(old_particles[i].pos.x, 0.0, -old_particles[i].pos.z));
 }
 
 fn project_on(a: vec3f, direction: vec3f) -> vec3f {
@@ -181,8 +182,8 @@ fn integrate_forces(@builtin(global_invocation_id) idx: vec3u) {
     p.x = clamp(p.x, -w, w);
     v.x = -e * v.x;
   }
-  if p.y < -50. {
-    p.y = -50.;
+  if p.y < -30. {
+    p.y = -30.;
     v.y = -e * v.y;
   }
   if p.y > 70. {

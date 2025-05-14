@@ -240,7 +240,7 @@ impl SphSimulation {
   }
 
   fn regenerate_positions(&mut self, device: &wgpu::Device) {
-    let w_distr = rand::distr::Uniform::new(-200.0, 200.0).unwrap();
+    let w_distr = rand::distr::Uniform::new(-10.0, 20.0).unwrap();
 
     let mut parts = vec![Particle::default(); self.count];
 
@@ -252,11 +252,7 @@ impl SphSimulation {
         z: rng.sample(w_distr),
       };
 
-      p.velocity = Vector3::zero(); // {
-                                    //   x: v * theta.sin() * phi.cos(),
-                                    //   y: v * theta.sin() * phi.sin(),
-                                    //   z: v * theta.cos(),
-                                    // }
+      p.velocity = Vector3::zero();
     });
     self.pos_buf.as_mut().unwrap().reset(parts, device);
   }
