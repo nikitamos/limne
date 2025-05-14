@@ -105,8 +105,26 @@ async fn main() {
   );
 
   let api = renderdoc::Api::new().expect("failed to create Renderdoc api");
-
+  let (tx, mut input) = tokio::sync::mpsc::channel(1);
+  tokio::spawn(async move {
+    loop {
+      let mut input = String::new();
+      std::io::stdin().read_line(&mut input).unwrap();
+      tx.send(input).await.unwrap();
+    }
+  });
+  let mut capture_count = 0;
   loop {
+    if let Ok(s) = input.try_recv() {
+      match s.trim().split(' ').collect::<Vec<_>>().as_slice() {
+        ["rg"] => params.regen_particles = true,
+        ["cap", count] => {
+          capture_count = count.parse().unwrap_or(0);
+        }
+        ["die"] => break,
+        _ => (),
+      }
+    }
     let t_now = Instant::now();
     let dt = (t_now - time).as_secs_f32();
     time = t_now;
@@ -118,7 +136,10 @@ async fn main() {
       size: SIZE_VEC,
     };
 
-    api.start_frame_capture();
+    if capture_count > 0 {
+      log::info!("Remaining captures: {capture_count}");
+      api.start_frame_capture();
+    }
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
       label: Some("DebugRenderEncoder"),
@@ -168,6 +189,10 @@ async fn main() {
         .chain(b)
         .chain(std::iter::once(encoder.finish())),
     );
-    api.end_frame_capture();
+    if capture_count > 0 {
+      api.end_frame_capture();
+      capture_count -= 1;
+    }
   }
+  log::info!("Exit.");
 }
