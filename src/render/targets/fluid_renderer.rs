@@ -1,5 +1,4 @@
 use crate::with;
-use std::clone;
 
 use wgpu::{
   vertex_attr_array, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
@@ -7,7 +6,7 @@ use wgpu::{
   ColorWrites, DepthBiasState, DepthStencilState, Extent3d, FragmentState, MultisampleState,
   RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor,
   RenderPipeline, RenderPipelineDescriptor, ShaderStages, StencilFaceState, StencilState,
-  TextureFormat::R32Float, VertexBufferLayout,
+  VertexBufferLayout,
 };
 
 use crate::{

@@ -9,6 +9,7 @@
     "DEFSIM",
     "limne",
     "multisampled",
+    "renderdoc",
     "Texel",
     "wgpu",
     "zbuf"

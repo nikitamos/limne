@@ -15,6 +15,10 @@ rayon = "1.10.0"
 tokio = { version = "1.44.1", features = ["rt", "macros", "rt-multi-thread"] }
 wgpu = "24.0.1"
 
+
 [[bin]]
 name = "amnis"
-path = "src/debug.rs"
+path = "amnis/debug.rs"
+
+[build-dependencies]
+cc = "1.2.22"

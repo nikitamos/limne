@@ -12,6 +12,56 @@ use limne::{
   *,
 };
 
+pub mod renderdoc {
+  use std::{
+    os::raw::c_void,
+    ptr::{self, NonNull},
+  };
+
+  #[repr(transparent)]
+  pub struct Api {
+    handle: ptr::NonNull<c_void>,
+  }
+
+  extern "C" {
+    fn create_renderdoc_api() -> *mut c_void;
+    fn destroy_renderdoc_api(api: *mut c_void);
+    fn renderdoc_start_capture(api: *const c_void);
+    fn renderdoc_end_capture(api: *const c_void);
+  }
+  impl Api {
+    pub fn new() -> Option<Self> {
+      unsafe {
+        let handle = create_renderdoc_api();
+        if handle.is_null() {
+          None
+        } else {
+          Some(Self {
+            handle: NonNull::new_unchecked(handle),
+          })
+        }
+      }
+    }
+    pub fn start_frame_capture(&self) {
+      unsafe {
+        renderdoc_start_capture(self.handle.as_ptr());
+      }
+    }
+    pub fn end_frame_capture(&self) {
+      unsafe {
+        renderdoc_end_capture(self.handle.as_ptr());
+      }
+    }
+  }
+  impl Drop for Api {
+    fn drop(&mut self) {
+      unsafe {
+        destroy_renderdoc_api(self.handle.as_mut());
+      }
+    }
+  }
+}
+
 #[tokio::main]
 async fn main() {
   env_logger::init();
@@ -54,6 +104,8 @@ async fn main() {
     },
   );
 
+  let api = renderdoc::Api::new().expect("failed to create Renderdoc api");
+
   loop {
     let t_now = Instant::now();
     let dt = (t_now - time).as_secs_f32();
@@ -65,6 +117,8 @@ async fn main() {
       camera: cam,
       size: SIZE_VEC,
     };
+
+    api.start_frame_capture();
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
       label: Some("DebugRenderEncoder"),
@@ -97,6 +151,7 @@ async fn main() {
         occlusion_query_set: None,
       })
       .forget_lifetime();
+
     sc.paint(
       PaintCallbackInfo {
         viewport: viewport,
@@ -113,5 +168,6 @@ async fn main() {
         .chain(b)
         .chain(std::iter::once(encoder.finish())),
     );
+    api.end_frame_capture();
   }
 }
