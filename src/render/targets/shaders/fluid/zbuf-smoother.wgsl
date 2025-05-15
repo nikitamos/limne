@@ -1,5 +1,5 @@
 @group(0) @binding(0)
-var sphere_tex: texture_2d<f32>;
+var normals_unsmoothed: texture_2d<f32>;
 @group(0) @binding(1)
 var smp: sampler;
 
@@ -18,7 +18,7 @@ struct FOut {
 @fragment
 fn fs_main(in: VOut) -> FOut {
   var o: FOut;
-  o.norm = textureSample(sphere_tex, smp, in.texcoord.xy);
+  o.norm = textureSample(normals_unsmoothed, smp, in.texcoord.xy);
   o.depth = textureSample(zbuf, smp, in.texcoord.xy);
   return o;
 }

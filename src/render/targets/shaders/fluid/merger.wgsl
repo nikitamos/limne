@@ -8,7 +8,7 @@ var zbuf_smoothed: texture_depth_2d;
 @group(1) @binding(1)
 var normal: texture_2d<f32>;
 @group(1) @binding(2)
-var sphere_tex: texture_2d<f32>;
+var normals_unsmoothed: texture_2d<f32>;
 @group(1) @binding(3)
 var thickness: texture_2d<f32>;
 
@@ -48,21 +48,23 @@ const THICKNESS_THRESHOLD = 1./10.;
 @fragment
 fn fs_main(in: VOut) -> FOut {
   var o: FOut;
-  let n = textureSample(sphere_tex, smp, in.texcoord.xy).xyz;
+  let n = textureSample(normal, smp, in.texcoord.xy).xyz;
   let v = vec3f(0.,0.,1.); // ( vec4f(0.0, 0.0, 1.0, 1.0) *g.camera * g.projection ).xyz;
   let t = textureSample(thickness, smp, in.texcoord.xy).x;
   let a = mix(FLUID_COLOR, SCENE_COLOR, exp(-t));
   let b = SCENE_COLOR;
   let f = ffresnel(dot(n, v));
-  let specular = pow(dot(n, LIGHT_DIR), 1.8);
+
+  let specular = pow(dot(n, LIGHT_DIR), 8.0);
   if (t < THICKNESS_THRESHOLD) {
     discard;
   }
 
   o.depth = textureSample(zbuf_smoothed, smp, in.texcoord.xy);
-  let phong = a * (1 - f)
+  let phong =
+    a * (1 - f)
     + b * f
     + specular*vec3(0.0, 1.0, 0.0);
-  o.col = vec4(phong*o.depth, 1.0);
+  o.col = vec4(phong, 1.0);
   return o;
 }

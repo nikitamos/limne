@@ -168,7 +168,6 @@ impl<'a> RenderTarget<'a> for SphSimulation {
   ) {
     self.width = new_size.x;
     self.height = new_size.y;
-    // self.regenerate_positions(device);
     self.init_pipelines(
       device,
       format,
@@ -328,6 +327,7 @@ impl SphSimulation {
     self.params_bg = Some(params_bg);
     self.params_buf = Some(params_buf);
     self.solver = Some(solver);
+    self.regenerate_positions(device);
   }
 
   fn write_buffers(&self, queue: &wgpu::Queue, params: &SimulationParams) {

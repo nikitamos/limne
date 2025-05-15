@@ -6,7 +6,7 @@ use wgpu::{
   ColorWrites, DepthBiasState, DepthStencilState, Extent3d, FragmentState, MultisampleState,
   RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor,
   RenderPipeline, RenderPipelineDescriptor, ShaderStages, StencilFaceState, StencilState,
-  VertexBufferLayout,
+  TextureFormat, VertexBufferLayout,
 };
 
 use crate::{
@@ -29,9 +29,10 @@ pub struct FluidRenderer {
   spheres_zbuf: TextureProvider,
   zbuf_smoothed: TextureProvider,
   thickness: TextureProvider,
-  sphere_tex: TextureProvider,
+  normals_unsmoothed: TextureProvider,
   normals: TextureProvider,
-  sphere_render: RenderPipeline,
+  // Normals unsmoothed
+  norusm_render: RenderPipeline,
   thickness_render: RenderPipeline,
   zbuf_smoother: TextureDrawer,
   merger: TextureDrawer,
@@ -72,24 +73,16 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
     // Render spheres to the depth buffer
     {
       let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-        label: Some("Spheres"),
+        label: Some("FluidRender::normals_unsmoothed"),
         color_attachments: &[
           Some(RenderPassColorAttachment {
-            view: &self.sphere_tex,
+            view: &self.normals_unsmoothed,
             resolve_target: None,
             ops: wgpu::Operations {
               load: wgpu::LoadOp::Clear(Color::WHITE),
               store: wgpu::StoreOp::Store,
             },
           }),
-          // Some(RenderPassColorAttachment {
-          //   view: &self.thickness,
-          //   resolve_target: None,
-          //   ops: wgpu::Operations {
-          //     load: wgpu::LoadOp::Clear(Color::BLACK),
-          //     store: wgpu::StoreOp::Store,
-          //   },
-          // }),
         ],
         depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
           view: &self.spheres_zbuf,
@@ -102,7 +95,7 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
         timestamp_writes: None,
         occlusion_query_set: None,
       });
-      pass.set_pipeline(&self.sphere_render);
+      pass.set_pipeline(&self.norusm_render);
       pass.set_bind_group(0, resources.global_bg, &[]);
       pass.set_bind_group(1, resources.params_bg, &[]);
       pass.set_vertex_buffer(0, resources.pos_buf.slice(..));
@@ -155,7 +148,7 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
       self.zbuf_smoother.render_into_pass(
         &mut zbuf_smoothing_pass,
         &TextureDrawerResources {
-          texture: &self.sphere_tex,
+          texture: &self.normals_unsmoothed,
           bind_groups: &[&self.zbuf_smoother_bg],
         },
       );
@@ -176,18 +169,18 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
     };
     self.normals.resize(device, new_size);
     self.spheres_zbuf.resize(device, new_size);
-    self.sphere_tex.resize(device, new_size);
+    self.normals_unsmoothed.resize(device, new_size);
     self.thickness.resize(device, new_size);
     self.zbuf_smoothed.resize(device, new_size);
 
-    self.merger.resized(device, &self.sphere_tex);
-    self.zbuf_smoother.resized(device, &self.sphere_tex);
+    self.merger.resized(device, &self.normals_unsmoothed);
+    self.zbuf_smoother.resized(device, &self.normals_unsmoothed);
     self.merge_bg = create_merge_bg(
       device,
       &self.zbuf_smoothed,
       &self.normals,
       &self.thickness,
-      &self.sphere_tex,
+      &self.normals_unsmoothed,
       &self.merge_bgl,
     );
     self.zbuf_smoother_bg = create_smoother_bg(device, &self.spheres_zbuf, &self.zbuf_smoother_bgl);
@@ -197,7 +190,7 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
     self.merger.render_into_pass(
       pass,
       &TextureDrawerResources {
-        texture: &self.sphere_tex,
+        texture: &self.normals_unsmoothed,
         bind_groups: &[&self.merge_bg, resources.global_bg],
       },
     );
@@ -230,10 +223,10 @@ impl<'a> FluidRenderer {
 
     desc = with!(desc: label = Some("zbuf_smoothed".to_owned()), usage = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST);
     let zbuf_smoothed = TextureProvider::new(device, desc.clone());
-    desc = with!(desc: label = Some("normals".to_owned()), format = *format, usage = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT);
+    desc = with!(desc: label = Some("normals".to_owned()), format = TextureFormat::Rgba16Float, usage = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT);
     let normals = TextureProvider::new(device, desc.clone());
-    desc = with!(desc: label = Some("sphere_tex".to_owned()), format = *format);
-    let sphere_tex = TextureProvider::new(device, desc.clone());
+    desc = with!(desc: label = Some("normals_unsmoothed".to_owned()));
+    let normals_unsmoothed = TextureProvider::new(device, desc.clone());
     desc =
       with!(desc: label = Some("thickness".to_owned()), format = wgpu::TextureFormat::Rgba16Float);
     let thickness = TextureProvider::new(device, desc.clone());
@@ -285,10 +278,10 @@ impl<'a> FluidRenderer {
     let merge_bgl = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
       label: Some("Merge textures BG layout"),
       entries: &[
-        with!(tex_bgle: ty = tex_ty_depth),
-        with!(tex_bgle: binding = 1),
-        with!(tex_bgle: binding = 2),
-        with!(tex_bgle: binding = 3),
+        with!(tex_bgle: ty = tex_ty_depth), // zbuf_smoothed
+        with!(tex_bgle: binding = 1),       // normals
+        with!(tex_bgle: binding = 2),       // normals_unsmoothed
+        with!(tex_bgle: binding = 3),       // thickness
       ],
     });
     let merge_bg = create_merge_bg(
@@ -296,7 +289,7 @@ impl<'a> FluidRenderer {
       &zbuf_smoothed,
       &normals,
       &thickness,
-      &sphere_tex,
+      &normals_unsmoothed,
       &merge_bgl,
     );
     let sphere_primitive = wgpu::PrimitiveState {
@@ -314,8 +307,8 @@ impl<'a> FluidRenderer {
       compilation_options: Default::default(),
       buffers: &[PARTICLE_POS_BUFFER_LAYOUT],
     };
-    let sphere_render = device.create_render_pipeline(&RenderPipelineDescriptor {
-      label: Some("Sphere render"),
+    let norusm_render = device.create_render_pipeline(&RenderPipelineDescriptor {
+      label: Some("norusm"),
       layout: Some(&render_layout),
       vertex: sphere_vertex.clone(),
       primitive: sphere_primitive,
@@ -329,14 +322,14 @@ impl<'a> FluidRenderer {
         module: &module,
         entry_point: Some("depth_spheretex"),
         compilation_options: Default::default(),
-        targets: &[Some(normals.color_target())],
+        targets: &[Some(normals_unsmoothed.color_target())],
       }),
       multiview: None,
       cache: None,
     });
 
     let thickness_render = device.create_render_pipeline(&RenderPipelineDescriptor {
-      label: Some("FluidRendere::thick_render"),
+      label: Some("thickness_render"),
       layout: Some(&render_layout),
       vertex: sphere_vertex,
       primitive: sphere_primitive,
@@ -382,7 +375,7 @@ impl<'a> FluidRenderer {
     let zbuf_smoother = TextureDrawer::new(
       device,
       &TextureDrawerResources {
-        texture: &sphere_tex,
+        texture: &normals_unsmoothed,
         bind_groups: &[&zbuf_smoother_bg],
       },
       format,
@@ -392,11 +385,7 @@ impl<'a> FluidRenderer {
           module: &smooth_module,
           entry_point: None,
           compilation_options: Default::default(),
-          targets: &[Some(ColorTargetState {
-            format: *format,
-            blend: Some(BlendState::REPLACE),
-            write_mask: ColorWrites::ALL,
-          })],
+          targets: &[Some(normals.color_target())],
         }),
         layout: &[zbuf_smoother_bgl.clone()],
       },
@@ -404,7 +393,7 @@ impl<'a> FluidRenderer {
     let merger = TextureDrawer::new(
       device,
       &TextureDrawerResources {
-        texture: &sphere_tex,
+        texture: &normals_unsmoothed,
         bind_groups: &[&merge_bg],
       },
       format,
@@ -428,9 +417,9 @@ impl<'a> FluidRenderer {
       spheres_zbuf,
       zbuf_smoothed,
       thickness,
-      sphere_tex,
+      normals_unsmoothed,
       normals,
-      sphere_render,
+      norusm_render,
       thickness_render,
       zbuf_smoother,
       merger,
@@ -463,7 +452,7 @@ fn create_merge_bg(
   zbuf_smoothed: &TextureProvider,
   normals: &TextureProvider,
   thickness: &TextureProvider,
-  sphere_tex: &TextureProvider,
+  normals_unsmoothed: &TextureProvider,
   merge_bgl: &BindGroupLayout,
 ) -> BindGroup {
   device.create_bind_group(&BindGroupDescriptor {
@@ -480,7 +469,7 @@ fn create_merge_bg(
       },
       BindGroupEntry {
         binding: 2,
-        resource: wgpu::BindingResource::TextureView(sphere_tex),
+        resource: wgpu::BindingResource::TextureView(normals_unsmoothed),
       },
       BindGroupEntry {
         binding: 3,
