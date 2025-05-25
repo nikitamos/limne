@@ -8,6 +8,7 @@ use super::{camera::OrbitCameraController, targets::simulation::SimulationParams
 
 pub struct App {
   time_factor: f32,
+  rho_from_h: bool,
   time: Instant,
   startup_time: Instant,
   viewport_rect: Rect,
@@ -42,9 +43,15 @@ impl eframe::App for App {
         ui.add(egui::Slider::new(&mut self.params.h, 0.0f32..=100.0f32));
         ui.end_row();
 
-        ui.label("ρ₀");
-        ui.add(egui::Slider::new(&mut self.params.rho0, 0.0f32..=20.0f32));
+        ui.checkbox(&mut self.rho_from_h, "Derive ρ₀");
         ui.end_row();
+        if !self.rho_from_h {
+          ui.label("ρ₀");
+          ui.add(egui::Slider::new(&mut self.params.rho0, 0.0f32..=20.0f32));
+          ui.end_row();
+        } else {
+          self.params.rho0 = self.params.m0 / (4./3.*PI*self.params.h.powi(3));
+        }
 
         ui.label("e");
         ui.add(egui::Slider::new(&mut self.params.e, 0.0f32..=1.0f32));
@@ -96,7 +103,7 @@ Looks at: ({:.1}, {:.1}, {:.1})\nr={:.1}",
         self.controller.reset();
       }
       ui.label(format!(
-        "V_0 = {}, m_0/rho_0 = {}",
+        "V₀ = {}, m₀/ρ₀ = {}",
         4.0 / 3.0 * PI * self.params.h.powi(3),
         self.params.m0 / self.params.rho0
       ));
@@ -143,7 +150,7 @@ Looks at: ({:.1}, {:.1}, {:.1})\nr={:.1}",
             time: (time - self.startup_time).as_secs_f32(),
             params: self.params,
             camera: self.controller.get_camera(),
-            size: rect.size()
+            size: rect.size(),
           },
         ));
         self.viewport_rect = rect;
@@ -169,6 +176,7 @@ impl App {
       time_factor: 1.0,
       time: Instant::now(),
       startup_time: Instant::now(),
+      rho_from_h: false,
       // Just a random rectangle
       viewport_rect: Rect::everything_above(0.0),
       params: Default::default(),

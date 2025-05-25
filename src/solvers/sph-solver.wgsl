@@ -9,6 +9,7 @@ struct Global {
   time: f32,
   dt: f32,
   camera: mat4x4f,
+  projection: mat4x4f
 }
 struct SimParams {
   k: f32,

@@ -2,11 +2,10 @@ use crate::with;
 
 use wgpu::{
   vertex_attr_array, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
-  BindGroupLayoutDescriptor, BindGroupLayoutEntry, BlendState, Color, ColorTargetState,
-  ColorWrites, DepthBiasState, DepthStencilState, Extent3d, FragmentState, MultisampleState,
-  RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor,
-  RenderPipeline, RenderPipelineDescriptor, ShaderStages, StencilFaceState, StencilState,
-  TextureFormat, VertexBufferLayout,
+  BindGroupLayoutDescriptor, BindGroupLayoutEntry, Color, DepthBiasState, DepthStencilState,
+  Extent3d, FragmentState, MultisampleState, RenderPassColorAttachment,
+  RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
+  ShaderStages, StencilFaceState, StencilState, TextureFormat, VertexBufferLayout,
 };
 
 use crate::{
@@ -74,16 +73,14 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
     {
       let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
         label: Some("FluidRender::normals_unsmoothed"),
-        color_attachments: &[
-          Some(RenderPassColorAttachment {
-            view: &self.normals_unsmoothed,
-            resolve_target: None,
-            ops: wgpu::Operations {
-              load: wgpu::LoadOp::Clear(Color::WHITE),
-              store: wgpu::StoreOp::Store,
-            },
-          }),
-        ],
+        color_attachments: &[Some(RenderPassColorAttachment {
+          view: &self.normals_unsmoothed,
+          resolve_target: None,
+          ops: wgpu::Operations {
+            load: wgpu::LoadOp::Clear(Color::WHITE),
+            store: wgpu::StoreOp::Store,
+          },
+        })],
         depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
           view: &self.spheres_zbuf,
           depth_ops: Some(wgpu::Operations {
@@ -149,7 +146,7 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
         &mut zbuf_smoothing_pass,
         &TextureDrawerResources {
           texture: &self.normals_unsmoothed,
-          bind_groups: &[&self.zbuf_smoother_bg],
+          bind_groups: &[&self.zbuf_smoother_bg, resources.global_bg],
         },
       );
     }
@@ -183,7 +180,12 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
       &self.normals_unsmoothed,
       &self.merge_bgl,
     );
-    self.zbuf_smoother_bg = create_smoother_bg(device, &self.spheres_zbuf, &self.zbuf_smoother_bgl);
+    self.zbuf_smoother_bg = create_smoother_bg(
+      device,
+      &self.spheres_zbuf,
+      &self.thickness,
+      &self.zbuf_smoother_bgl,
+    );
   }
 
   fn render_into_pass(&self, pass: &mut wgpu::RenderPass, resources: &'a Self::RenderResources) {
@@ -245,7 +247,7 @@ impl<'a> FluidRenderer {
     let depth_stencil_state = DepthStencilState {
       format: wgpu::TextureFormat::Depth32Float,
       depth_write_enabled: true,
-      depth_compare: wgpu::CompareFunction::Less,
+      depth_compare: wgpu::CompareFunction::LessEqual,
       stencil: StencilState {
         front: StencilFaceState::IGNORE,
         back: StencilFaceState::IGNORE,
@@ -359,18 +361,13 @@ impl<'a> FluidRenderer {
 
     let zbuf_smoother_bgl = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
       label: Some("zbuf_smoother_bg"),
-      entries: &[BindGroupLayoutEntry {
-        binding: 0,
-        visibility: ShaderStages::FRAGMENT,
-        ty: wgpu::BindingType::Texture {
-          sample_type: wgpu::TextureSampleType::Depth,
-          view_dimension: wgpu::TextureViewDimension::D2,
-          multisampled: false,
-        },
-        count: None,
-      }],
+      entries: &[
+        with!(tex_bgle: ty = tex_ty_depth),
+        with!(tex_bgle: ty = tex_ty_float, binding = 1),
+      ],
     });
-    let zbuf_smoother_bg = create_smoother_bg(device, &spheres_zbuf, &zbuf_smoother_bgl);
+    let zbuf_smoother_bg =
+      create_smoother_bg(device, &spheres_zbuf, &thickness, &zbuf_smoother_bgl);
     let zbuf_smoother = TextureDrawer::new(
       device,
       &TextureDrawerResources {
@@ -386,7 +383,7 @@ impl<'a> FluidRenderer {
           compilation_options: Default::default(),
           targets: &[Some(normals.color_target())],
         }),
-        layout: &[zbuf_smoother_bgl.clone()],
+        layout: &[zbuf_smoother_bgl.clone(), init_res.global_layout.clone()],
       },
     );
     let merger = TextureDrawer::new(
@@ -433,15 +430,22 @@ impl<'a> FluidRenderer {
 fn create_smoother_bg(
   device: &wgpu::Device,
   spheres_zbuf: &TextureProvider,
+  thickness: &TextureProvider,
   zbuf_smoother_bgl: &BindGroupLayout,
 ) -> BindGroup {
   let zbuf_smoother_bg = device.create_bind_group(&BindGroupDescriptor {
     label: Some("zbuf_smoothed_bg"),
     layout: zbuf_smoother_bgl,
-    entries: &[BindGroupEntry {
-      binding: 0,
-      resource: wgpu::BindingResource::TextureView(spheres_zbuf),
-    }],
+    entries: &[
+      BindGroupEntry {
+        binding: 0,
+        resource: wgpu::BindingResource::TextureView(spheres_zbuf),
+      },
+      BindGroupEntry {
+        binding: 1,
+        resource: wgpu::BindingResource::TextureView(&thickness),
+      },
+    ],
   });
   zbuf_smoother_bg
 }

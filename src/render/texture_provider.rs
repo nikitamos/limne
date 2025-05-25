@@ -1,9 +1,8 @@
 use std::ops::Deref;
 
 use wgpu::{
-  BindGroupLayoutEntry, BlendState, ColorTargetState, ColorWrites, Device, Extent3d, Texture,
-  TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView,
-  TextureViewDescriptor,
+  BlendState, ColorTargetState, ColorWrites, Device, Extent3d, Texture, TextureDescriptor,
+  TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor,
 };
 
 #[derive(Clone)]
