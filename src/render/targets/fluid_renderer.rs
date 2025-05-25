@@ -231,8 +231,7 @@ impl<'a> FluidRenderer {
       with!(desc: label = Some("thickness".to_owned()), format = wgpu::TextureFormat::Rgba16Float);
     let thickness = TextureProvider::new(device, desc.clone());
 
-    let module =
-      device.create_shader_module(wgpu::include_wgsl!("shaders/simulation-particles.wgsl"));
+    let module = device.create_shader_module(wgpu::include_wgsl!("shaders/fluid/unsmoothed.wgsl"));
     let merge_module =
       device.create_shader_module(wgpu::include_wgsl!("shaders/fluid/merger.wgsl"));
     let smooth_module =
@@ -320,7 +319,7 @@ impl<'a> FluidRenderer {
       },
       fragment: Some(wgpu::FragmentState {
         module: &module,
-        entry_point: Some("depth_spheretex"),
+        entry_point: Some("depth_normals"),
         compilation_options: Default::default(),
         targets: &[Some(normals_unsmoothed.color_target())],
       }),

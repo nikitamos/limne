@@ -8,10 +8,14 @@
     "consv",
     "DEFSIM",
     "limne",
+    "multisample",
     "multisampled",
     "renderdoc",
     "Texel",
+    "unclipped",
+    "unsmoothed",
     "wgpu",
+    "wgsl",
     "zbuf"
   ]
 }

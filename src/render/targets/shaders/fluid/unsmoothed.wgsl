@@ -53,7 +53,7 @@ fn lerp(a1: f32, a2: f32,
 const light_dir = vec3f(0.0, 1.41*0.5, -1.41*0.5);
 
 @fragment
-fn depth_spheretex(in: VertexOutput) -> FragmentOutput {
+fn depth_normals(in: VertexOutput) -> FragmentOutput {
   var out: FragmentOutput;
   
   let center_eye = g.camera * vec4(in.center_pos, 1.0);
@@ -66,12 +66,7 @@ fn depth_spheretex(in: VertexOutput) -> FragmentOutput {
   let n = vec3(r, -sqrt(radius*radius - r2));
   let pixel_pos = (center_eye + vec4f(n, 0.0));
   let clip_pos = g.projection * pixel_pos;
-  let back_eye = pixel_pos - 2*vec4(0., 0., pixel_pos.z, 0.0);
-  let back_clip = g.projection * back_eye;
-  
-  // out.col = mix(vec4(0.0, 0.0, 1.0, 1.0), vec4(1., 0., 0., 1.), saturate(abs(in.rho) / 2. / params.rho0));
-  let diffuse = max(0.0, dot(light_dir, normalize(n)));
-  // out.col *= diffuse;
+
   out.depth = clip_pos.z / clip_pos.w;
   out.col = vec4f(normalize(n), 1.0);
   
@@ -95,7 +90,7 @@ fn thickness(in: VertexOutput) -> @location(0) vec4f {
   let back_eye = pixel_pos - 2*vec4(0., 0., pixel_pos.z, 0.0);
   let back_clip = g.projection * back_eye;
   out = abs(clip_pos.z / clip_pos.w - back_clip.z / back_clip.w);
-  return vec4(out);
+  return vec4(out, pixel_pos.xyz);
 }
 
 
