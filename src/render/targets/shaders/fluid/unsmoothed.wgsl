@@ -51,10 +51,14 @@ fn lerp(a1: f32, a2: f32,
 }
 
 const light_dir = vec3f(0.0, 1.41*0.5, -1.41*0.5);
+const DENSITY_THRESHOLD = 1.0;
 
 @fragment
 fn depth_normals(in: VertexOutput) -> FragmentOutput {
   var out: FragmentOutput;
+  if in.rho < params.rho0*DENSITY_THRESHOLD {
+    discard;
+  }
   
   let center_eye = g.camera * vec4(in.center_pos, 1.0);
   let radius = params.h / 2.;
@@ -63,11 +67,12 @@ fn depth_normals(in: VertexOutput) -> FragmentOutput {
   if (r2 >= radius * radius) {
     discard;
   }
-  let n = vec3(r, -sqrt(radius*radius - r2));
+  var n = vec3(r, sqrt(radius*radius - r2));
   let pixel_pos = (center_eye + vec4f(n, 0.0));
   let clip_pos = g.projection * pixel_pos;
 
   out.depth = clip_pos.z / clip_pos.w;
+  n.z = -n.z;
   out.col = vec4f(normalize(n), 1.0);
   out.view_pos = vec4f(0.0, pixel_pos.xyz);
   
@@ -77,6 +82,9 @@ fn depth_normals(in: VertexOutput) -> FragmentOutput {
 @fragment
 fn thickness(in: VertexOutput) -> @location(0) vec4f {
   var out: f32;
+  if in.rho < params.rho0*DENSITY_THRESHOLD {
+    discard;
+  }
   
   let center_eye = g.camera * vec4(in.center_pos, 1.0);
   let radius = params.h / 2.;
@@ -85,7 +93,7 @@ fn thickness(in: VertexOutput) -> @location(0) vec4f {
   if (r2 >= radius * radius) {
     discard;
   }
-  let n = vec3(r, -sqrt(radius*radius - r2));
+  let n = vec3(r, sqrt(radius*radius - r2));
   let pixel_pos = (center_eye + vec4f(n, 0.0));
   let clip_pos = g.projection * pixel_pos;
   let back_eye = pixel_pos - 2*vec4(0., 0., pixel_pos.z, 0.0);
@@ -119,5 +127,6 @@ fn vs_main(
   out.clip_pos = g.projection * out.eye_pos;
   out.center_pos = in.pos;
   out.out_clip_pos = out.clip_pos;
+  out.rho = in.rho;
   return out;
 }
