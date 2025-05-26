@@ -73,14 +73,24 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
     {
       let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
         label: Some("FluidRender::normals_unsmoothed"),
-        color_attachments: &[Some(RenderPassColorAttachment {
-          view: &self.normals_unsmoothed,
-          resolve_target: None,
-          ops: wgpu::Operations {
-            load: wgpu::LoadOp::Clear(Color::WHITE),
-            store: wgpu::StoreOp::Store,
-          },
-        })],
+        color_attachments: &[
+          Some(RenderPassColorAttachment {
+            view: &self.normals_unsmoothed,
+            resolve_target: None,
+            ops: wgpu::Operations {
+              load: wgpu::LoadOp::Clear(Color::WHITE),
+              store: wgpu::StoreOp::Store,
+            },
+          }),
+          Some(RenderPassColorAttachment {
+            view: &self.thickness,
+            resolve_target: None,
+            ops: wgpu::Operations {
+              load: wgpu::LoadOp::Clear(Color::BLACK),
+              store: wgpu::StoreOp::Store,
+            },
+          }),
+        ],
         depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
           view: &self.spheres_zbuf,
           depth_ops: Some(wgpu::Operations {
@@ -105,7 +115,7 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
           view: &self.thickness,
           resolve_target: None,
           ops: wgpu::Operations {
-            load: wgpu::LoadOp::Clear(Color::BLACK),
+            load: wgpu::LoadOp::Load,
             store: wgpu::StoreOp::Store,
           },
         })],
@@ -323,7 +333,10 @@ impl<'a> FluidRenderer {
         module: &module,
         entry_point: Some("depth_normals"),
         compilation_options: Default::default(),
-        targets: &[Some(normals_unsmoothed.color_target())],
+        targets: &[
+          Some(normals_unsmoothed.color_target()),
+          Some(thickness.color_target()),
+        ],
       }),
       multiview: None,
       cache: None,
@@ -351,7 +364,11 @@ impl<'a> FluidRenderer {
               dst_factor: wgpu::BlendFactor::One,
               operation: wgpu::BlendOperation::Add,
             },
-            alpha: wgpu::BlendComponent::REPLACE,
+            alpha: wgpu::BlendComponent {
+              src_factor: wgpu::BlendFactor::Zero,
+              dst_factor: wgpu::BlendFactor::One,
+              operation: wgpu::BlendOperation::Add,
+            },
           })
         ))],
       }),

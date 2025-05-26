@@ -14,7 +14,7 @@ struct VertexOutput {
 }
 struct FragmentOutput {
   @location(0) col: vec4f,
-  // @location(1) thick: vec4f,
+  @location(1) view_pos: vec4f,
   @builtin(frag_depth) depth: f32,
 }
 
@@ -69,6 +69,7 @@ fn depth_normals(in: VertexOutput) -> FragmentOutput {
 
   out.depth = clip_pos.z / clip_pos.w;
   out.col = vec4f(normalize(n), 1.0);
+  out.view_pos = vec4f(0.0, pixel_pos.xyz);
   
   return out;
 }
@@ -90,7 +91,7 @@ fn thickness(in: VertexOutput) -> @location(0) vec4f {
   let back_eye = pixel_pos - 2*vec4(0., 0., pixel_pos.z, 0.0);
   let back_clip = g.projection * back_eye;
   out = abs(clip_pos.z / clip_pos.w - back_clip.z / back_clip.w);
-  return vec4(out, pixel_pos.xyz);
+  return vec4(out, 0.0, 0.0, 0.0);
 }
 
 
