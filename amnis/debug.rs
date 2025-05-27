@@ -85,7 +85,12 @@ async fn main() {
     y: SIZE[1] as f32,
   };
   let viewport = Rect::from_min_max(Pos2::ZERO, SIZE_VEC.to_pos2());
-  let cam = OrbitCameraController::default().get_camera();
+  let cam = OrbitCameraController::default()
+    .rotate_radians(egui::Vec2 {
+      x: std::f32::consts::PI / 4.,
+      y: 0.0,
+    })
+    .get_camera();
   let target_tex = TextureProvider::new(
     &device,
     TextureProviderDescriptor {

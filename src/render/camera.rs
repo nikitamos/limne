@@ -26,7 +26,7 @@ impl OrbitCameraController {
     self.center = point;
     self
   }
-  pub fn handle_drag(&mut self, vec: egui::Vec2) -> &mut Self {
+  pub fn rotate_radians(&mut self, vec: egui::Vec2) -> &mut Self {
     if vec.length() == 0. {
       return self;
     }

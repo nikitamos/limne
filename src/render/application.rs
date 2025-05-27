@@ -139,7 +139,7 @@ Looks at: ({:.1}, {:.1}, {:.1})\nr={:.1}",
         }
         self
           .controller
-          .handle_drag(drag)
+          .rotate_radians(drag)
           .move_center_local(delta)
           .move_radius(scroll.y * -0.5);
 
