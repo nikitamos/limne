@@ -21,7 +21,7 @@ void *create_renderdoc_api() {
   return NULL;
 }
 
-void destroy_renderdoc_api(RenderdocApi *api) { free(api); }
+void destroy_renderdoc_api(RenderdocApi *api) {}
 void renderdoc_start_capture(const RenderdocApi *api) {
   api->StartFrameCapture(NULL, NULL);
 }
