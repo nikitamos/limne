@@ -62,7 +62,7 @@ pub mod renderdoc {
   }
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() {
   env_logger::init();
   let WgpuSetup::Existing(egui_wgpu::WgpuSetupExisting { device, queue, .. }) =
@@ -115,7 +115,10 @@ async fn main() {
     loop {
       let mut input = String::new();
       std::io::stdin().read_line(&mut input).unwrap();
-      tx.send(input).await.unwrap();
+      tx.send(input.clone()).await.unwrap();
+      if input.trim() == "die" {
+        break;
+      }
     }
   });
   let mut capture_count = 0;
@@ -142,7 +145,7 @@ async fn main() {
     };
 
     if capture_count > 0 {
-      log::info!("Remaining captures: {capture_count}");
+      log::info!("Remaining captures: {capture_count}, fps={:.1}", 1./dt);
       api.start_frame_capture();
     }
 
