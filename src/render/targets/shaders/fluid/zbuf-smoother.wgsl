@@ -29,7 +29,20 @@ struct FOut {
 }
 
 const STEPS: i32 = 20;
-const dt: f32 = 0.1/20.0;
+const dt: f32 = 0.1/2.;
+
+fn dTex_dx(pos: vec2f, tex: texture_2d<f32>) -> vec4f {
+  let h = vec2(1./g.size.x, 0.);
+  let r = textureSample(tex, smp, pos + h);
+  let l = textureSample(tex, smp, pos - h);
+  return (r - l) / 2. / h.x;
+}
+fn dTex_dy(pos: vec2f, tex: texture_2d<f32>) -> vec4f {
+  let h = vec2(0., 1./g.size.y);
+  let r = textureSample(tex, smp, pos + h);
+  let l = textureSample(tex, smp, pos - h);
+  return (r - l) / 2. / h.y;
+}
 
 @fragment
 fn fs_main(in: VOut) -> FOut {
@@ -41,8 +54,8 @@ fn fs_main(in: VOut) -> FOut {
   let cy = 2. / vy / fy;
 
   var o: FOut;
-  var depth = textureSample(zbuf, smp, in.texcoord.xy);
-
+  var depth = -textureSample(thickness, smp, in.texcoord.xy).w;
+  let dh = vec2(1.) / g.size;
 
   var dzdx: f32;
   var dzdy: f32;
@@ -52,11 +65,11 @@ fn fs_main(in: VOut) -> FOut {
   var H: f32;
   // TODO: use vectorization (dot product) where possible
   for (var i = 0; i<STEPS; i += 1) {
-    dzdx = dpdxFine(depth);
-    dzdy = dpdyFine(depth);
+    dzdx = dpdxFine(depth) / dh.x;
+    dzdy = dpdyFine(depth) / dh.y;
     let d2zdx2 = dpdxFine(dzdx);
     let d2zdy2 = dpdyFine(dzdy);
-    let d2z = .5* (dpdxFine(dzdy) + dpdyFine(dzdx));
+    let d2z = .5* (dpdxFine(dzdy)/dh.y + dpdyFine(dzdx)/dh.x);
 
     d = cy*cy*dzdx*dzdx + cx*cx*dzdy*dzdy + cx*cx*cy*cy*depth*depth;
     ex = 0.5 * dzdx * (2*cy*cy*dzdx*d2zdx2 + 2*cx*cx*dzdy*d2z + 2*cx*cx*cy*cy*depth*dzdx)
@@ -69,11 +82,12 @@ fn fs_main(in: VOut) -> FOut {
   
   // let dx = dpdxFine(depth);
   // let dy = dpdyFine(depth);
-  // let H = dx + dy;
+  // let H = 0.0;//w dx + dy;
 
   // let normal = textureSample(normals_unsmoothed, smp, in.texcoord.xy).xyz;
   let normal = -normalize(vec3f(-cy*ex, -cx*ey, cx*cy*depth));
   o.norm = vec4f(normal, H);
+  depth = textureSample(zbuf, smp, in.texcoord.xy);
   o.depth = depth;
   return o;
 }
