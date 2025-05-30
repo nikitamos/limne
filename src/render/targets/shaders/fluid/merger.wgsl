@@ -45,10 +45,31 @@ const FLUID_COLOR: vec3f = vec3f(0.07, 0.075, 1.0);
 const LIGHT_DIR = vec3f(0.0, 1.41*0.5, -1.41*0.5);
 const THICKNESS_THRESHOLD = 1./10.;
 
+fn sample_thickness_diff(at: vec2f, delta:vec2f) -> vec4f {
+  return textureSample(thickness, smp, at+delta) -
+         textureSample(thickness, smp, at-delta);
+}
+
+fn sample_z_diff(at: vec2f, delta: vec2f) -> f32 {
+  return textureSample(zbuf_smoothed, smp, at+delta) -
+         textureSample(zbuf_smoothed, smp, at-delta);
+}
+
+fn get_normal(pos: vec2f) -> vec3f {
+  let dh = 1. / g.size;
+  let dx = vec3(sample_thickness_diff(pos.xy, vec2f(dh.x,0.)).yz,
+                sample_z_diff(pos.xy, vec2f(dh.x, 0.))
+               );
+  let dy = vec3(sample_thickness_diff(pos.xy, vec2f(0.,dh.y)).yz,
+                sample_z_diff(pos.xy, vec2f(0.,dh.y))
+               );
+  return normalize(cross(dx, dy));
+}
+
 @fragment
 fn fs_main(in: VOut) -> FOut {
   var o: FOut;
-  let n = textureSample(normal, smp, in.texcoord.xy).xyz;
+  let n = get_normal(in.texcoord.xy);
   let v = vec3f(0.,0.,1.); // ( vec4f(0.0, 0.0, 1.0, 1.0) *g.camera * g.projection ).xyz;
   let t = textureSample(thickness, smp, in.texcoord.xy).x;
   let a = mix(FLUID_COLOR, SCENE_COLOR, exp(-t));

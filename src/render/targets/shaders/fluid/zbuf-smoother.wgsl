@@ -54,7 +54,9 @@ fn fs_main(in: VOut) -> FOut {
   let cy = 2. / vy / fy;
 
   var o: FOut;
-  var depth = -textureSample(thickness, smp, in.texcoord.xy).w;
+  var eye = textureSample(thickness, smp, in.texcoord.xy).yzw;
+  eye.z = -eye.z;
+  var depth = eye.z;
   let dh = vec2(1.) / g.size;
 
   var dzdx: f32;
@@ -79,14 +81,16 @@ fn fs_main(in: VOut) -> FOut {
     H = (cy*ex + cx*ey) / pow(d, 1.5) / 2.;
     depth += H*dt;
   }
-  
-  // let dx = dpdxFine(depth);
-  // let dy = dpdyFine(depth);
-  // let H = 0.0;//w dx + dy;
 
-  // let normal = textureSample(normals_unsmoothed, smp, in.texcoord.xy).xyz;
-  let normal = -normalize(vec3f(-cy*ex, -cx*ey, cx*cy*depth));
-  o.norm = vec4f(normal, H);
+  // Let keep it here for debug purposes
+  let dx = (textureSample(thickness, smp, in.texcoord.xy + vec2f(dh.x,0.))
+          - textureSample(thickness, smp, in.texcoord.xy - vec2f(dh.x,0.))).yzw
+          * vec3(1., 1., -1.)/2.;
+  let dy = (textureSample(thickness, smp, in.texcoord.xy + vec2(0.,dh.y))
+          - textureSample(thickness, smp, in.texcoord.xy - vec2(0.,dh.y))).yzw
+          * vec3(1., 1., -1.)/2.;
+  let normal = normalize(cross(dx, dy));
+  o.norm = vec4f(1.0);
   depth = textureSample(zbuf, smp, in.texcoord.xy);
   o.depth = depth;
   return o;
