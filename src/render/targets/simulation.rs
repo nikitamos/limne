@@ -58,6 +58,7 @@ use wgpu::{BufferUsages, DepthStencilState, ShaderStages};
 
 use crate::render::render_target::{ExternalResources, RenderTarget};
 
+use super::blur::{Blur, GaussianBlur};
 use super::fluid_renderer::{FluidRenderInit, FluidRenderer, FluidRendererResources};
 
 pub struct SimResources<'a> {
@@ -84,7 +85,6 @@ pub struct SimInit<'a> {
 impl<'a> ExternalResources<'a> for SimResources<'a> {}
 
 pub struct SphSimulation {
-  // positions: SwapBuffers<ParticleVector<f32>>,
   pos_buf: Option<SwapBuffers<Vec<Particle>>>,
   fluid_renderer: Option<FluidRenderer>,
   params_buf: Option<wgpu::Buffer>,
@@ -93,6 +93,7 @@ pub struct SphSimulation {
   width: f32,
   count: usize,
   solver: Option<SphSolverGpu>,
+  smoother: Box<dyn Blur + Sync + Send>,
 }
 
 impl<'a> RenderTarget<'a> for SphSimulation {
@@ -232,6 +233,7 @@ impl SphSimulation {
       width,
       count,
       solver: None,
+      smoother: Box::new(GaussianBlur::default()),
     };
     out.init_pipelines(device, format, global_layout, depth);
     out.regenerate_positions(device);
@@ -319,6 +321,7 @@ impl SphSimulation {
         global_layout,
         params_layout: &params_layout,
         depth_stencil_state: depth_stencil.clone(),
+        smoother_matrix: self.smoother.down_right_kernel(),
       },
     );
 

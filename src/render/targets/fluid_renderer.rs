@@ -1,9 +1,12 @@
-use crate::with;
+use std::ops::Deref;
+
+use crate::{render::AsBuffer, with};
 
 use wgpu::{
+  util::{BufferInitDescriptor, DeviceExt},
   vertex_attr_array, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
-  BindGroupLayoutDescriptor, BindGroupLayoutEntry, Color, DepthBiasState, DepthStencilState,
-  Extent3d, FragmentState, MultisampleState, RenderPassColorAttachment,
+  BindGroupLayoutDescriptor, BindGroupLayoutEntry, Buffer, Color, DepthBiasState,
+  DepthStencilState, Extent3d, FragmentState, MultisampleState, RenderPassColorAttachment,
   RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
   ShaderStages, StencilFaceState, StencilState, TextureFormat, VertexBufferLayout,
 };
@@ -30,7 +33,6 @@ pub struct FluidRenderer {
   thickness: TextureProvider,
   normals_unsmoothed: TextureProvider,
   normals: TextureProvider,
-  // Normals unsmoothed
   norusm_render: RenderPipeline,
   thickness_render: RenderPipeline,
   zbuf_smoother: TextureDrawer,
@@ -39,6 +41,8 @@ pub struct FluidRenderer {
   merge_bg: BindGroup,
   zbuf_smoother_bg: BindGroup,
   zbuf_smoother_bgl: BindGroupLayout,
+  kernel_matrix: Vec<f32>,
+  smoothing_kernel_buf: Buffer,
 }
 
 pub struct FluidRendererResources<'a> {
@@ -53,6 +57,7 @@ pub struct FluidRenderInit<'a> {
   pub global_layout: &'a BindGroupLayout,
   pub params_layout: &'a BindGroupLayout,
   pub depth_stencil_state: DepthStencilState,
+  pub smoother_matrix: Vec<f32>,
 }
 
 impl<'a> ExternalResources<'a> for FluidRendererResources<'a> {}
@@ -195,6 +200,7 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
       &self.spheres_zbuf,
       &self.thickness,
       &self.zbuf_smoother_bgl,
+      &self.smoothing_kernel_buf
     );
   }
 
@@ -376,15 +382,38 @@ impl<'a> FluidRenderer {
       cache: None,
     });
 
+    let smoothing_kernel_buf = device.create_buffer_init(&BufferInitDescriptor {
+      label: Some("smoothing kernel buf"),
+      contents: (init_res.smoother_matrix).deref().as_bytes_buffer(),
+      usage: wgpu::BufferUsages::UNIFORM
+        | wgpu::BufferUsages::STORAGE
+        | wgpu::BufferUsages::COPY_DST,
+    });
+
     let zbuf_smoother_bgl = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
       label: Some("zbuf_smoother_bg"),
       entries: &[
         with!(tex_bgle: ty = tex_ty_depth),
         with!(tex_bgle: ty = tex_ty_float, binding = 1),
+        wgpu::BindGroupLayoutEntry {
+          binding: 2,
+          visibility: wgpu::ShaderStages::FRAGMENT,
+          ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+          },
+          count: None,
+        },
       ],
     });
-    let zbuf_smoother_bg =
-      create_smoother_bg(device, &spheres_zbuf, &thickness, &zbuf_smoother_bgl);
+    let zbuf_smoother_bg = create_smoother_bg(
+      device,
+      &spheres_zbuf,
+      &thickness,
+      &zbuf_smoother_bgl,
+      &smoothing_kernel_buf,
+    );
     let zbuf_smoother = TextureDrawer::new(
       device,
       &TextureDrawerResources {
@@ -440,6 +469,8 @@ impl<'a> FluidRenderer {
       merge_bg,
       zbuf_smoother_bg,
       zbuf_smoother_bgl,
+      smoothing_kernel_buf,
+      kernel_matrix: init_res.smoother_matrix,
     }
   }
 }
@@ -449,6 +480,7 @@ fn create_smoother_bg(
   spheres_zbuf: &TextureProvider,
   thickness: &TextureProvider,
   zbuf_smoother_bgl: &BindGroupLayout,
+  kernel_buf: &Buffer,
 ) -> BindGroup {
   let zbuf_smoother_bg = device.create_bind_group(&BindGroupDescriptor {
     label: Some("zbuf_smoothed_bg"),
@@ -461,6 +493,14 @@ fn create_smoother_bg(
       BindGroupEntry {
         binding: 1,
         resource: wgpu::BindingResource::TextureView(&thickness),
+      },
+      BindGroupEntry {
+        binding: 2,
+        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+          buffer: kernel_buf,
+          offset: 0,
+          size: None,
+        }),
       },
     ],
   });

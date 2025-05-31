@@ -6,7 +6,10 @@
     "celldims",
     "cgmath",
     "consv",
+    "conv",
     "DEFSIM",
+    "dpdx",
+    "dpdy",
     "egui",
     "limne",
     "multisample",
@@ -14,10 +17,12 @@
     "regen",
     "renderdoc",
     "Texel",
+    "texels",
     "unclipped",
     "unsmoothed",
     "wgpu",
     "wgsl",
+    "wzyx",
     "zbuf"
   ]
 }

@@ -3,10 +3,15 @@ var normals_unsmoothed: texture_2d<f32>;
 @group(0) @binding(1)
 var smp: sampler;
 
+const SIDE: i32 = 8;
+const ARRAY_LENGTH: i32 = SIDE*SIDE/4;
+
 @group(1) @binding(0)
 var zbuf: texture_depth_2d;
 @group(1) @binding(1)
 var thickness: texture_2d<f32>;
+@group(1) @binding(2)
+var<uniform> kernel: array<vec4f, ARRAY_LENGTH>;
 
 struct Global {
   size: vec2<f32>,
@@ -28,70 +33,52 @@ struct FOut {
   @location(0) norm: vec4f
 }
 
-const STEPS: i32 = 20;
-const dt: f32 = 0.1/2.;
+var<private> dh: vec2f;
+var<private> dx: vec2f;
 
-fn dTex_dx(pos: vec2f, tex: texture_2d<f32>) -> vec4f {
-  let h = vec2(1./g.size.x, 0.);
-  let r = textureSample(tex, smp, pos + h);
-  let l = textureSample(tex, smp, pos - h);
-  return (r - l) / 2. / h.x;
+const Ex: vec2f = vec2(1., 0.);
+const Ey: vec2f = vec2(0., 1.);
+
+fn sample_vec4(first: vec2f) -> vec4f {
+  return vec4(
+    textureSample(zbuf, smp, first),
+    textureSample(zbuf, smp, first +   dx),
+    textureSample(zbuf, smp, first + 2*dx),
+    textureSample(zbuf, smp, first + 3*dx)
+  );
 }
-fn dTex_dy(pos: vec2f, tex: texture_2d<f32>) -> vec4f {
-  let h = vec2(0., 1./g.size.y);
-  let r = textureSample(tex, smp, pos + h);
-  let l = textureSample(tex, smp, pos - h);
-  return (r - l) / 2. / h.y;
+fn get_conv(idx: vec2i) -> vec4f {
+  return kernel[dot(idx, vec2(1, SIDE/4))];
+}
+fn convolve_quad(c: vec2f, iconv: vec2i) -> f32 {
+  let pos = vec2(4*f32(iconv.x), f32(iconv.y));
+  let sym_pos = -pos + Ex;
+  let conv = get_conv(iconv);
+  var out: f32 = 0.;
+
+  out += dot(conv,      sample_vec4(c + pos));
+  out += dot(conv,      sample_vec4(c + pos*(Ex-Ey)));
+  out += dot(conv.wzyx, sample_vec4(c + sym_pos));
+  out += dot(conv.wzyx, sample_vec4(c + sym_pos*(Ex-Ey)));
+
+  return out;
 }
 
 @fragment
 fn fs_main(in: VOut) -> FOut {
-  let fx = g.projection[0][0];
-  let fy = g.projection[1][1];
-  let vx = g.size.x;
-  let vy = g.size.y;
-  let cx = 2. / vx / fx;
-  let cy = 2. / vy / fy;
-
   var o: FOut;
-  var eye = textureSample(thickness, smp, in.texcoord.xy).yzw;
-  eye.z = -eye.z;
-  var depth = eye.z;
-  let dh = vec2(1.) / g.size;
+  var depth = 0.;
+  dx = vec2(1./g.size.x, 0.);
+  let dy = vec2(0., 1./g.size.y);
+  dh = dx + dy;
 
-  var dzdx: f32;
-  var dzdy: f32;
-  var ex: f32;
-  var ey: f32;
-  var d: f32;
-  var H: f32;
-  // TODO: use vectorization (dot product) where possible
-  for (var i = 0; i<STEPS; i += 1) {
-    dzdx = dpdxFine(depth) / dh.x;
-    dzdy = dpdyFine(depth) / dh.y;
-    let d2zdx2 = dpdxFine(dzdx);
-    let d2zdy2 = dpdyFine(dzdy);
-    let d2z = .5* (dpdxFine(dzdy)/dh.y + dpdyFine(dzdx)/dh.x);
-
-    d = cy*cy*dzdx*dzdx + cx*cx*dzdy*dzdy + cx*cx*cy*cy*depth*depth;
-    ex = 0.5 * dzdx * (2*cy*cy*dzdx*d2zdx2 + 2*cx*cx*dzdy*d2z + 2*cx*cx*cy*cy*depth*dzdx)
-         - d2zdx2 * d;
-    ey = 0.5 * dzdy * (2*cy*cy*dzdx*d2z + 2*cx*cx*dzdy*d2zdy2 + 2*cx*cx*cy*cy*depth*dzdy)
-         - d2zdy2 * d;
-    H = (cy*ex + cx*ey) / pow(d, 1.5) / 2.;
-    depth += H*dt;
+  for (var row: i32 = 0; row < SIDE; row += 1) {
+    for (var col: i32 = 0; col < SIDE/4; col += 1) {
+      depth += convolve_quad(in.texcoord.xy, vec2(col, row));
+    }
   }
 
-  // Let keep it here for debug purposes
-  let dx = (textureSample(thickness, smp, in.texcoord.xy + vec2f(dh.x,0.))
-          - textureSample(thickness, smp, in.texcoord.xy - vec2f(dh.x,0.))).yzw
-          * vec3(1., 1., -1.)/2.;
-  let dy = (textureSample(thickness, smp, in.texcoord.xy + vec2(0.,dh.y))
-          - textureSample(thickness, smp, in.texcoord.xy - vec2(0.,dh.y))).yzw
-          * vec3(1., 1., -1.)/2.;
-  let normal = normalize(cross(dx, dy));
   o.norm = vec4f(1.0);
-  depth = textureSample(zbuf, smp, in.texcoord.xy);
   o.depth = depth;
   return o;
 }
