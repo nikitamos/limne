@@ -46,14 +46,6 @@ var<uniform> g: Global;
 var<storage,read> params: SimParams;
 // BINDINGS END
 
-fn lerp(a1: f32, a2: f32,
-        b1: f32, b2: f32,
-        a: f32)-> f32 {
-  return b1 + (b2 - b1) * saturate((a - a1) / (a2 - a1));
-}
-
-const light_dir = vec3f(0.0, 1.41*0.5, -1.41*0.5);
-
 @fragment
 fn depth_normals(in: VertexOutput) -> FragmentOutput {
   var out: FragmentOutput;

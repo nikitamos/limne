@@ -46,9 +46,13 @@ fn at(i: vec2i) -> f32 {
 fn fs_main(in: VOut) -> FOut {
   var o: FOut;
   o.depth = 0.;
+  o.norm = vec4(0.);
   dx = vec2(1./g.size.x, 0.);
   let dy = vec2(0., 1./g.size.y);
   dh = dx + dy;
+  if (textureSample(zbuf, smp, in.texcoord.xy) == 1.0) {
+    return o;
+  }
 
   var px = vec2(-SIDE, -SIDE);
   for (; px.x < SIDE; px.x += 1) {

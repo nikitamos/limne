@@ -209,7 +209,7 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
       pass,
       &TextureDrawerResources {
         texture: &self.normals_unsmoothed,
-        bind_groups: &[&self.merge_bg, resources.params_bg],
+        bind_groups: &[&self.merge_bg, resources.params_bg, resources.global_bg],
       },
     );
   }
@@ -452,7 +452,7 @@ impl<'a> FluidRenderer {
             write_mask: wgpu::ColorWrites::all(),
           })],
         }),
-        layout: &[merge_bgl.clone(), init_res.params_layout.clone()],
+        layout: &[merge_bgl.clone(), init_res.params_layout.clone(), init_res.global_layout.clone()],
         unclipped_depth: false,
       },
     );
