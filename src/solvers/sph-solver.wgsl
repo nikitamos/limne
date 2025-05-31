@@ -18,7 +18,9 @@ struct SimParams {
   h: f32,
   rho0: f32,
   e: f32,
-  w: f32
+  w: f32,
+  ttr: f32,
+  dtr: f32,
 }
 
 @group(0) @binding(0)

@@ -32,7 +32,9 @@ struct SimParams {
   h: f32,
   rho0: f32,
   e: f32,
-  w: f32
+  w: f32,
+  ttr: f32,
+  dtr: f32
 }
 
 // BINDING BEGIN
@@ -51,12 +53,11 @@ fn lerp(a1: f32, a2: f32,
 }
 
 const light_dir = vec3f(0.0, 1.41*0.5, -1.41*0.5);
-const DENSITY_THRESHOLD = 1.5;
 
 @fragment
 fn depth_normals(in: VertexOutput) -> FragmentOutput {
   var out: FragmentOutput;
-  if in.rho < params.rho0*DENSITY_THRESHOLD {
+  if in.rho < params.rho0*params.dtr {
     discard;
   }
   
@@ -82,7 +83,7 @@ fn depth_normals(in: VertexOutput) -> FragmentOutput {
 @fragment
 fn thickness(in: VertexOutput) -> @location(0) vec4f {
   var out: f32;
-  if in.rho < params.rho0*DENSITY_THRESHOLD {
+  if in.rho < params.rho0*params.dtr {
     discard;
   }
   

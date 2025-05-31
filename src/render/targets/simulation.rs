@@ -18,10 +18,12 @@ pub struct SimulationParams {
   pub rho0: f32,
   pub e: f32,
   pub w: f32,
+  /// Thickness threshold
+  pub ttr: f32,
+  /// Density threshold
+  pub dtr: f32,
   pub paused: bool,
-  pub draw_particles: bool,
   pub regen_particles: bool,
-  pub move_particles: bool,
 }
 
 impl Default for SimulationParams {
@@ -34,10 +36,10 @@ impl Default for SimulationParams {
       rho0: 5.0,
       e: 0.8,
       w: 20.0,
+      ttr: 0.25,
+      dtr: 1.2,
       paused: false,
-      draw_particles: true,
       regen_particles: false,
-      move_particles: true,
     }
   }
 }
@@ -125,15 +127,12 @@ impl<'a> RenderTarget<'a> for SphSimulation {
     resources: &'a Self::UpdateResources,
     encoder: &mut wgpu::CommandEncoder,
   ) {
-    if !resources.params.paused {
-      self.pos_buf.as_mut().unwrap().swap(encoder);
-      self.write_buffers(queue, resources.params);
-    }
-
+    self.write_buffers(queue, resources.params);
     if resources.params.regen_particles {
       self.regenerate_positions(device);
     }
     if !resources.params.paused {
+      self.pos_buf.as_mut().unwrap().swap(encoder);
       self.solver.as_mut().unwrap().update(
         device,
         queue,
@@ -145,19 +144,17 @@ impl<'a> RenderTarget<'a> for SphSimulation {
         encoder,
       );
     }
-    if resources.params.draw_particles {
-      self.fluid_renderer.as_mut().unwrap().update(
-        device,
-        queue,
-        &FluidRendererResources {
-          global_bg: resources.global_group,
-          params_bg: self.params_bg.as_ref().unwrap(),
-          pos_buf: self.pos_buf.as_ref().unwrap().cur_buf(),
-          count: self.count as u32,
-        },
-        encoder,
-      );
-    }
+    self.fluid_renderer.as_mut().unwrap().update(
+      device,
+      queue,
+      &FluidRendererResources {
+        global_bg: resources.global_group,
+        params_bg: self.params_bg.as_ref().unwrap(),
+        pos_buf: self.pos_buf.as_ref().unwrap().cur_buf(),
+        count: self.count as u32,
+      },
+      encoder,
+    );
   }
 
   fn resized(
@@ -190,17 +187,15 @@ impl<'a> RenderTarget<'a> for SphSimulation {
   }
 
   fn render_into_pass(&self, pass: &mut wgpu::RenderPass, resources: &'a Self::RenderResources) {
-    if resources.params.draw_particles {
-      self.fluid_renderer.as_ref().unwrap().render_into_pass(
-        pass,
-        &FluidRendererResources {
-          global_bg: resources.global_group,
-          params_bg: self.params_bg.as_ref().unwrap(),
-          pos_buf: self.pos_buf.as_ref().unwrap().cur_buf(),
-          count: self.count as u32,
-        },
-      );
-    }
+    self.fluid_renderer.as_ref().unwrap().render_into_pass(
+      pass,
+      &FluidRendererResources {
+        global_bg: resources.global_group,
+        params_bg: self.params_bg.as_ref().unwrap(),
+        pos_buf: self.pos_buf.as_ref().unwrap().cur_buf(),
+        count: self.count as u32,
+      },
+    );
   }
 }
 

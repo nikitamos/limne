@@ -29,12 +29,17 @@ impl eframe::App for App {
     egui::SidePanel::left("simulation_props").show(ctx, |ui| {
       log::trace!("left: {}", ui.available_size());
       Grid::new("sim_props_grid").show(ui, |ui| {
+        ui.label("Solver");
+        ui.end_row();
+
         ui.label("K");
         ui.add(egui::Slider::new(&mut self.params.k, K_RANGE));
         ui.end_row();
+
         ui.label("m0");
         ui.add(egui::Slider::new(&mut self.params.m0, M0_RANGE));
         ui.end_row();
+
         ui.label("ν");
         ui.add(egui::Slider::new(&mut self.params.viscosity, NU_RANGE));
         ui.end_row();
@@ -50,7 +55,7 @@ impl eframe::App for App {
           ui.add(egui::Slider::new(&mut self.params.rho0, 0.0f32..=20.0f32));
           ui.end_row();
         } else {
-          self.params.rho0 = self.params.m0 / (4./3.*PI*self.params.h.powi(3));
+          self.params.rho0 = self.params.m0 / (4. / 3. * PI * self.params.h.powi(3));
         }
 
         ui.label("e");
@@ -65,15 +70,24 @@ impl eframe::App for App {
         ui.add(egui::Slider::new(&mut self.time_factor, 0.0..=1.0));
         ui.end_row();
 
-        ui.checkbox(&mut self.params.paused, "Paused");
-        ui.end_row();
-        if !self.params.paused {
-          ui.checkbox(&mut self.params.move_particles, "Move particles");
-          ui.end_row();
-        }
         ui.separator();
         ui.end_row();
-        ui.checkbox(&mut self.params.draw_particles, "Draw particles");
+
+        ui.label("Renderer");
+        ui.end_row();
+
+        ui.label("ρ threshold");
+        ui.add(egui::Slider::new(&mut self.params.dtr, 0.0f32..=10.0));
+        ui.end_row();
+
+        ui.label("T threshold");
+        ui.add(egui::Slider::new(&mut self.params.ttr, 0.0f32..=10.0));
+        ui.end_row();
+
+        ui.separator();
+        ui.end_row();
+
+        ui.checkbox(&mut self.params.paused, "Paused");
         ui.end_row();
       });
       self.params.regen_particles = ui.button("Regen positions").clicked();
