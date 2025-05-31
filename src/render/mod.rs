@@ -3,6 +3,7 @@ use core::slice;
 use cgmath::{Matrix, Matrix4};
 
 pub mod application;
+pub mod blur;
 pub mod camera;
 pub mod render_target;
 pub mod state;

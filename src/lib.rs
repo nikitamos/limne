@@ -39,8 +39,10 @@ pub async fn create_wgpu_setup() -> egui_wgpu::WgpuSetup {
     max_push_constant_size: 8,
     ..Default::default()
   };
-  let required_features =
-    Features::VERTEX_WRITABLE_STORAGE | Features::POLYGON_MODE_LINE | Features::PUSH_CONSTANTS;
+  let required_features = Features::VERTEX_WRITABLE_STORAGE
+    | Features::POLYGON_MODE_LINE
+    | Features::PUSH_CONSTANTS
+    | Features::ADDRESS_MODE_CLAMP_TO_BORDER;
 
   log::info!("Required workgroup size: {LOCAL_PASS_SIZE}");
   log::info!(

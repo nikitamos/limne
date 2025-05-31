@@ -58,8 +58,8 @@ use wgpu::{BufferUsages, DepthStencilState, ShaderStages};
 
 use crate::render::render_target::{ExternalResources, RenderTarget};
 
-use super::blur::{Blur, GaussianBlur};
 use super::fluid_renderer::{FluidRenderInit, FluidRenderer, FluidRendererResources};
+use crate::render::blur::{Blur, GaussianBlur};
 
 pub struct SimResources<'a> {
   pub params: &'a SimulationParams,
@@ -321,7 +321,7 @@ impl SphSimulation {
         global_layout,
         params_layout: &params_layout,
         depth_stencil_state: depth_stencil.clone(),
-        smoother_matrix: self.smoother.down_right_kernel(),
+        smoother_matrix: self.smoother.full_kernel(),
       },
     );
 
