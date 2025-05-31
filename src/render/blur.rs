@@ -40,8 +40,8 @@ pub struct GaussianBlur {
 impl Default for GaussianBlur {
   fn default() -> Self {
     Self {
-      s: 1.0,
-      side: 8,
+      s: 5.0,
+      side: 24,
       dh: Vector2 { x: 1.0, y: 1.0 },
     }
   }
@@ -86,7 +86,7 @@ impl Blur for GaussianBlur {
         }
       }
     }
-    if log::max_level() <= log::Level::Trace {
+    if log::max_level() >= log::Level::Trace {
       log::trace!("Created blur matrix:");
       trace_matrix(out.iter().map(|x| x.iter().map(|y| y / norm)));
     }

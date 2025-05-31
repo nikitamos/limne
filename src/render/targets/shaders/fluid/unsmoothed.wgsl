@@ -51,7 +51,7 @@ fn lerp(a1: f32, a2: f32,
 }
 
 const light_dir = vec3f(0.0, 1.41*0.5, -1.41*0.5);
-const DENSITY_THRESHOLD = 1.0;
+const DENSITY_THRESHOLD = 1.5;
 
 @fragment
 fn depth_normals(in: VertexOutput) -> FragmentOutput {
@@ -61,7 +61,7 @@ fn depth_normals(in: VertexOutput) -> FragmentOutput {
   }
   
   let center_eye = g.camera * vec4(in.center_pos, 1.0);
-  let radius = params.h / 2.;
+  let radius = params.h;
   let r = (in.eye_pos - center_eye).xy;
   let r2 = dot(r, r);
   if (r2 >= radius * radius) {
@@ -87,7 +87,7 @@ fn thickness(in: VertexOutput) -> @location(0) vec4f {
   }
   
   let center_eye = g.camera * vec4(in.center_pos, 1.0);
-  let radius = params.h / 2.;
+  let radius = params.h;
   let r = (in.eye_pos - center_eye).xy;
   let r2 = dot(r, r);
   if (r2 >= radius * radius) {
@@ -117,10 +117,7 @@ fn vs_main(
     cos(angle), sin(angle),
     -sin(angle), cos(angle)
   );
-  var d = rot * vec2(params.h * SQRT_3, 0.0);
-  if (in.idx == 0) {
-    d *= 2.0;
-  }
+  var d = rot * vec2(params.h * SQRT_3*2., 0.0);
 
   var out: VertexOutput;
   out.eye_pos = g.camera * vec4(in.pos, 1.0) + vec4(d.x, d.y, 0.0, 0.0);

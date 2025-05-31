@@ -40,13 +40,13 @@ fn ffresnel(cos_theta: f32) -> f32 {
   return r0 + (1-r0)*pow(cos_theta, 5.);
 }
 
-const SCENE_COLOR: vec3f = vec3f(1.0, 0.0, 0.0);
+const SCENE_COLOR: vec3f = vec3f(1.0, 1.0, 1.0);
 const FLUID_COLOR: vec3f = vec3f(0.07, 0.075, 1.0);
 const LIGHT_DIR = vec3f(0.0, 1.41*0.5, -1.41*0.5);
-const THICKNESS_THRESHOLD = 1./10.;
+const THICKNESS_THRESHOLD = 0.25;
 
 fn get_normal(pos: vec2f) -> vec3f {
-  return normalize(textureSample(normal, smp, pos)).xyz;
+  return normalize(textureSample(normal, smp, pos)).xyz*vec3(1.,1.,1.);
 }
 
 @fragment
@@ -57,12 +57,13 @@ fn fs_main(in: VOut) -> FOut {
   let t = textureSample(thickness, smp, in.texcoord.xy).x;
   let a = mix(FLUID_COLOR, SCENE_COLOR, exp(-t));
   let b = SCENE_COLOR;
-  let f = ffresnel(dot(n, v));
+  let f = ffresnel(abs(dot(n, v)));
 
-  let specular = pow(dot(n, LIGHT_DIR), 8.0);
+  let specular = pow(dot(n, LIGHT_DIR), 5.0);
   if (t < THICKNESS_THRESHOLD) {
     discard;
   }
+  let diffuse = FLUID_COLOR*saturate(dot(n, v));
 
   o.depth = textureSample(zbuf_smoothed, smp, in.texcoord.xy);
   let phong =
@@ -70,5 +71,7 @@ fn fs_main(in: VOut) -> FOut {
     + b * f
     + specular*vec3(0.0, 1.0, 0.0);
   o.col = vec4(phong, 1.0);
+  // o.col = vec4(0.5*(n+1.), 1.);
+  // o.col = vec4(vec3(o.depth), 1.);
   return o;
 }

@@ -3,7 +3,7 @@ var normals_unsmoothed: texture_2d<f32>;
 @group(0) @binding(1)
 var smp: sampler;
 
-const SIDE: i32 = 8;
+const SIDE: i32 = 24;
 const CENTER: vec2i = vec2(SIDE, SIDE);
 const DIM_LEN: i32 = 2*SIDE+1;
 const ARRAY_LEN: i32 = DIM_LEN*DIM_LEN;
