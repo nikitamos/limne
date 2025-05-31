@@ -196,6 +196,7 @@ impl PersistentState {
         stencil: None,
         fragment: None,
         layout: &[],
+        unclipped_depth: false
       },
     );
 

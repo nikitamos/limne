@@ -74,6 +74,7 @@ pub struct TextureDrawerInitRes<'a> {
   pub fragment: Option<FragmentState<'a>>,
   /// The first bind group here has `1` index
   pub layout: &'a [BindGroupLayout],
+  pub unclipped_depth: bool,
 }
 
 impl<'a> RenderTarget<'a> for TextureDrawer {
@@ -157,7 +158,7 @@ impl TextureDrawer {
         strip_index_format: None,
         front_face: wgpu::FrontFace::Ccw,
         cull_mode: None,
-        unclipped_depth: false,
+        unclipped_depth: init_res.unclipped_depth,
         polygon_mode: wgpu::PolygonMode::Fill,
         conservative: false,
       },

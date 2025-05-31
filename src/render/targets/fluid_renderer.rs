@@ -200,7 +200,7 @@ impl<'a> RenderTarget<'a> for FluidRenderer {
       &self.spheres_zbuf,
       &self.thickness,
       &self.zbuf_smoother_bgl,
-      &self.smoothing_kernel_buf
+      &self.smoothing_kernel_buf,
     );
   }
 
@@ -422,7 +422,7 @@ impl<'a> FluidRenderer {
       },
       format,
       TextureDrawerInitRes {
-        stencil: Some(depth_stencil_state),
+        stencil: Some(with!(depth_stencil_state: depth_compare = wgpu::CompareFunction::Always)),
         fragment: Some(FragmentState {
           module: &smooth_module,
           entry_point: None,
@@ -430,6 +430,7 @@ impl<'a> FluidRenderer {
           targets: &[Some(normals.color_target())],
         }),
         layout: &[zbuf_smoother_bgl.clone(), init_res.global_layout.clone()],
+        unclipped_depth: true,
       },
     );
     let merger = TextureDrawer::new(
@@ -452,6 +453,7 @@ impl<'a> FluidRenderer {
           })],
         }),
         layout: &[merge_bgl.clone(), init_res.global_layout.clone()],
+        unclipped_depth: false,
       },
     );
 

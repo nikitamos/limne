@@ -8,10 +8,6 @@ const CENTER: vec2i = vec2(SIDE, SIDE);
 const DIM_LEN: i32 = 2*SIDE+1;
 const ARRAY_LEN: i32 = DIM_LEN*DIM_LEN;
 
-struct Kernel {
-  _padding: vec4f,
-}
-
 @group(1) @binding(0)
 var zbuf: texture_depth_2d;
 @group(1) @binding(1)
@@ -49,7 +45,7 @@ fn at(i: vec2i) -> f32 {
 @fragment
 fn fs_main(in: VOut) -> FOut {
   var o: FOut;
-  var depth = 0.;
+  o.depth = 0.;
   dx = vec2(1./g.size.x, 0.);
   let dy = vec2(0., 1./g.size.y);
   dh = dx + dy;
@@ -58,11 +54,10 @@ fn fs_main(in: VOut) -> FOut {
   for (; px.x < SIDE; px.x += 1) {
     for (px.y = -SIDE; px.y < SIDE; px.y += 1) {
       let pos = vec2f(px);
-      depth += textureSample(zbuf, smp, in.texcoord.xy + dh*pos) * at(px+CENTER);
+      o.depth += textureSample(zbuf, smp, in.texcoord.xy + dh*pos) * at(px+CENTER);
+      o.norm += textureSample(normals_unsmoothed, smp, in.texcoord.xy + dh*pos) * at(px+CENTER);
     };
   }
-
-  o.norm = vec4f(1.0);
-  o.depth = depth;
+  o.norm.w = textureSample(normals_unsmoothed, smp, in.texcoord.xy).w;
   return o;
 }

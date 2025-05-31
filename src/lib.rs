@@ -42,7 +42,8 @@ pub async fn create_wgpu_setup() -> egui_wgpu::WgpuSetup {
   let required_features = Features::VERTEX_WRITABLE_STORAGE
     | Features::POLYGON_MODE_LINE
     | Features::PUSH_CONSTANTS
-    | Features::ADDRESS_MODE_CLAMP_TO_BORDER;
+    | Features::ADDRESS_MODE_CLAMP_TO_BORDER
+    | Features::DEPTH_CLIP_CONTROL;
 
   log::info!("Required workgroup size: {LOCAL_PASS_SIZE}");
   log::info!(
