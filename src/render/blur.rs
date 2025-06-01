@@ -40,8 +40,8 @@ pub struct GaussianBlur {
 impl Default for GaussianBlur {
   fn default() -> Self {
     Self {
-      s: 5.0,
-      side: 24,
+      s: 7.0,
+      side: 12,
       dh: Vector2 { x: 1.0, y: 1.0 },
     }
   }
