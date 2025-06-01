@@ -1,8 +1,9 @@
-use std::ops::Deref;
+use std::{ops::Deref, sync::Arc};
 
 use crate::{render::AsBuffer, with};
 
 use wgpu::{
+  core::device::queue,
   util::{BufferInitDescriptor, DeviceExt},
   vertex_attr_array, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
   BindGroupLayoutDescriptor, BindGroupLayoutEntry, Buffer, Color, DepthBiasState,
@@ -383,7 +384,7 @@ impl<'a> FluidRenderer {
     });
 
     let smoothing_kernel_buf = device.create_buffer_init(&BufferInitDescriptor {
-      label: Some("smoothing kernel buf"),
+      label: Some("smoothing kernel"),
       contents: (init_res.smoother_matrix).deref().as_bytes_buffer(),
       usage: wgpu::BufferUsages::UNIFORM
         | wgpu::BufferUsages::STORAGE
@@ -452,7 +453,11 @@ impl<'a> FluidRenderer {
             write_mask: wgpu::ColorWrites::all(),
           })],
         }),
-        layout: &[merge_bgl.clone(), init_res.params_layout.clone(), init_res.global_layout.clone()],
+        layout: &[
+          merge_bgl.clone(),
+          init_res.params_layout.clone(),
+          init_res.global_layout.clone(),
+        ],
         unclipped_depth: false,
       },
     );
@@ -473,6 +478,35 @@ impl<'a> FluidRenderer {
       zbuf_smoother_bgl,
       smoothing_kernel_buf,
       kernel_matrix: init_res.smoother_matrix,
+    }
+  }
+
+  pub fn set_kernel(&mut self, mat: Vec<f32>, device: &wgpu::Device, queue: &wgpu::Queue) {
+    if mat.len() != self.kernel_matrix.len() {
+      log::debug!("Set kernel, new len");
+      self.smoothing_kernel_buf = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("smoothing kernel"),
+        contents: mat.deref().as_bytes_buffer(),
+        usage: wgpu::BufferUsages::COPY_DST
+          | wgpu::BufferUsages::UNIFORM
+          | wgpu::BufferUsages::STORAGE,
+      });
+      self.kernel_matrix = mat.clone();
+      self.zbuf_smoother_bg = create_smoother_bg(
+        device,
+        &self.spheres_zbuf,
+        &self.thickness,
+        &self.zbuf_smoother_bgl,
+        &self.smoothing_kernel_buf,
+      );
+    } else {
+      log::debug!("Set kernel, old len");
+      self.kernel_matrix = mat.clone();
+      queue.write_buffer(
+        &self.smoothing_kernel_buf,
+        0,
+        self.kernel_matrix.deref().as_bytes_buffer(),
+      );
     }
   }
 }

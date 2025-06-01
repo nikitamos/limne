@@ -335,4 +335,18 @@ impl SphSimulation {
       params.as_bytes_buffer(),
     );
   }
+
+  pub fn set_blur(
+    &mut self,
+    blur: Box<dyn Blur + Send + Sync>,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+  ) {
+    self
+      .fluid_renderer
+      .as_mut()
+      .unwrap()
+      .set_kernel(blur.full_kernel(), device, queue);
+    self.smoother = blur;
+  }
 }

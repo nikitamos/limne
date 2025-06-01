@@ -3,17 +3,18 @@ var normals_unsmoothed: texture_2d<f32>;
 @group(0) @binding(1)
 var smp: sampler;
 
-const SIDE: i32 = 12;
-const CENTER: vec2i = vec2(SIDE, SIDE);
-const DIM_LEN: i32 = 2*SIDE+1;
-const ARRAY_LEN: i32 = DIM_LEN*DIM_LEN;
 
 @group(1) @binding(0)
 var zbuf: texture_depth_2d;
 @group(1) @binding(1)
 var thickness: texture_2d<f32>;
 @group(1) @binding(2)
-var<storage> kernel: array<f32, ARRAY_LEN>;
+var<storage> kernel: array<f32>;
+
+var<private> SIDE: i32;
+var<private> CENTER: vec2i;
+var<private> DIM_LEN: i32;
+var<private> ARRAY_LEN: i32;
 
 struct Global {
   size: vec2<f32>,
@@ -44,6 +45,10 @@ fn at(i: vec2i) -> f32 {
 
 @fragment
 fn fs_main(in: VOut) -> FOut {
+  ARRAY_LEN = i32(arrayLength(&kernel));
+  DIM_LEN = i32(sqrt(f32(ARRAY_LEN)));
+  SIDE = (DIM_LEN-1)/2;
+  CENTER = vec2(SIDE, SIDE);
   var o: FOut;
   o.depth = 0.;
   o.norm = vec4(0.);

@@ -1,10 +1,15 @@
 use crate::render::state::*;
 use cgmath::{num_traits::zero, InnerSpace, Vector2, Zero};
 use eframe::CreationContext;
+use egui::mutex::Mutex;
 use egui::{Grid, Key, Rect, Sense};
 use std::{f32::consts::PI, time::Instant};
 
-use super::{camera::OrbitCameraController, targets::simulation::SimulationParams};
+use super::{
+  blur::{Blur, GaussianBlur},
+  camera::OrbitCameraController,
+  targets::simulation::SimulationParams,
+};
 
 pub struct App {
   time_factor: f32,
@@ -14,6 +19,8 @@ pub struct App {
   viewport_rect: Rect,
   params: SimulationParams,
   controller: OrbitCameraController,
+  immediate_blur: bool,
+  gauss: GaussianBlur,
 }
 
 const K_RANGE: std::ops::RangeInclusive<f32> = 0.0..=500.0;
@@ -24,6 +31,7 @@ impl eframe::App for App {
   fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
     let time = Instant::now();
     let dt = time - self.time;
+    let mut new_blur: Option<Box<dyn Blur + Send + Sync + 'static>> = None;
     self.time = time;
 
     egui::SidePanel::left("simulation_props").show(ctx, |ui| {
@@ -89,6 +97,32 @@ impl eframe::App for App {
 
         ui.checkbox(&mut self.params.paused, "Paused");
         ui.end_row();
+
+        ui.separator();
+        ui.end_row();
+        ui.label("Gaussian blur");
+        ui.end_row();
+
+        ui.label("σ");
+        ui.add(egui::Slider::new(&mut self.gauss.s, 0.0..=15.0));
+        ui.end_row();
+
+        ui.label("Side");
+        ui.add(egui::Slider::new(&mut self.gauss.side, 0..=64));
+        ui.end_row();
+
+        let apply_button = ui.button(if self.immediate_blur {
+          "Un-auto-apply"
+        } else {
+          "Apply"
+        });
+        ui.end_row();
+        if apply_button.secondary_clicked() {
+          self.immediate_blur = !self.immediate_blur;
+        }
+        if self.immediate_blur || apply_button.clicked() {
+          new_blur = Some(Box::new(self.gauss));
+        }
       });
       self.params.regen_particles = ui.button("Regen positions").clicked();
 
@@ -165,6 +199,7 @@ Looks at: ({:.1}, {:.1}, {:.1})\nr={:.1}",
             params: self.params,
             camera: self.controller.get_camera(),
             size: rect.size(),
+            new_blur: Mutex::new(new_blur),
           },
         ));
         self.viewport_rect = rect;
@@ -195,6 +230,8 @@ impl App {
       viewport_rect: Rect::everything_above(0.0),
       params: Default::default(),
       controller: Default::default(),
+      gauss: Default::default(),
+      immediate_blur: false
     }
   }
 }

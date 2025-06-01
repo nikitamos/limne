@@ -31,6 +31,7 @@ pub fn trace_matrix(m: impl Iterator<Item = impl Iterator<Item = f32>>) {
   log::trace!("Matrix sum={sum:.5}");
 }
 
+#[derive(Copy, Clone)]
 pub struct GaussianBlur {
   pub s: f32,
   pub side: usize,

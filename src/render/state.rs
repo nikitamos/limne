@@ -1,5 +1,6 @@
 use bindings::{GLOBAL_BIND_LOC, GLOBAL_BIND_SIZE};
 use cgmath::{Deg, Matrix4};
+use egui::mutex::Mutex;
 use egui_wgpu::{CallbackTrait, RenderState};
 use std::num::NonZero;
 use wgpu::{
@@ -20,6 +21,7 @@ use crate::render::{
 };
 
 use super::{
+  blur::Blur,
   targets::{gizmo::Gizmo, show_texture::TextureDrawer},
   texture_provider::TextureProvider,
   AsBuffer,
@@ -269,6 +271,7 @@ pub struct StateCallback {
   pub params: SimulationParams,
   pub camera: Matrix4<f32>,
   pub size: egui::Vec2,
+  pub new_blur: Mutex<Option<Box<dyn Blur + Send + Sync + 'static>>>,
 }
 
 impl CallbackTrait for StateCallback {
@@ -313,6 +316,9 @@ impl CallbackTrait for StateCallback {
       .chain(state.projection.as_bytes_buffer().to_owned())
       .collect();
     queue.write_buffer(&state.global_buf, 0, &buf_vec);
+    if let Some(b) = self.new_blur.lock().take() {
+      state.simulation.set_blur(b, device, queue);
+    }
 
     state.simulation.update(
       device,
