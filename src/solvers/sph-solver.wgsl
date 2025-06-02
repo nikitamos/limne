@@ -41,9 +41,27 @@ const PI: f32 = 3.14159265358979;
 
 fn poly6(r: f32, h: f32) -> f32 {
   if 0. <= r && r <= h {
+    // return 15 /PI / pow(h, 6.) * pow(h-r, 3.);
     return 315. / 64. / PI / pow(h, 9.) * pow(h * h - r * r, 3.);
   }
   return 0.;
+}
+
+const WENDLAND_ALPHA: f32 = 21. / 16. / PI;
+fn wendland(r: f32, h: f32) -> f32 {
+  let q = r / h;
+  if 0. <= q && q <= 2 {
+    return WENDLAND_ALPHA / (h*h*h) * (2*q + 1) * pow(1 - .5*q, 4.);
+  }
+  return 0.;
+}
+
+fn grad_wendland(r: vec3f, h: f32) -> vec3f {
+  let q = length(r) / h;
+  if 0. <= q && q <= 2. {
+    return -WENDLAND_ALPHA / (h*h*h*h) * 5*q * pow(1 - .5*q, 3.) * normalize(r);
+  }
+  return vec3(0.);
 }
 
 fn grad_spiky(r: vec3f, h: f32) -> vec3f {
@@ -69,7 +87,7 @@ fn intrp_density(at: vec3<f32>) -> f32 {
   var sum: f32 = 0.0;
   let els = arrayLength(&old_particles);
   for (var i: u32 = 0; i < els; i += u32(1)) {
-    sum += poly6(distance(at, old_particles[i].pos), params.h);
+    sum += wendland(distance(at, old_particles[i].pos), params.h);
   }
   sum *= params.m0;
   return sum;
@@ -145,7 +163,7 @@ fn pressure_forces(@builtin(global_invocation_id) idx: vec3u) {
     }
     // pressure
     cur_particles[i].forces -= 0.5 * (pressure[i] + pressure[j]) / cur_particles[j].density
-      * grad_spiky(old_particles[i].pos - old_particles[j].pos, params.h);
+      * grad_wendland(old_particles[i].pos - old_particles[j].pos, params.h);
     // viscosity
     cur_particles[i].forces += params.viscosity * (old_particles[j].velocity - old_particles[i].velocity)
      * laplacian_viscosity(distance(old_particles[i].pos, old_particles[j].pos), params.h) / cur_particles[j].density;
