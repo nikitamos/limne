@@ -97,7 +97,7 @@ impl PersistentState {
       self.texture_drawer.resized(device, &self.target_texture);
 
       self.projection =
-        GL_TRANSFORM_TO_WGPU * cgmath::perspective(Deg(60.0), size.x / size.y, 10., 500.);
+        GL_TRANSFORM_TO_WGPU * cgmath::perspective(Deg(6.0), size.x / size.y, 2., 40.);
     }
   }
 
@@ -368,14 +368,14 @@ impl CallbackTrait for StateCallback {
         timestamp_writes: None,
         occlusion_query_set: None,
       });
-      state.gizmo.render_into_pass(
-        &mut pass,
-        &GizmoResources {
-          global_group: &state.global_bind,
-          global_layout: &state.global_layout,
-          depth_stencil: &state.depth_state,
-        },
-      );
+      // state.gizmo.render_into_pass(
+      //   &mut pass,
+      //   &GizmoResources {
+      //     global_group: &state.global_bind,
+      //     global_layout: &state.global_layout,
+      //     depth_stencil: &state.depth_state,
+      //   },
+      // );
       state.simulation.render_into_pass(
         &mut pass,
         &SimResources {

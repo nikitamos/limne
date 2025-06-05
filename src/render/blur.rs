@@ -42,7 +42,7 @@ impl Default for GaussianBlur {
   fn default() -> Self {
     Self {
       s: 7.0,
-      side: 12,
+      side: 18,
       dh: Vector2 { x: 1.0, y: 1.0 },
     }
   }

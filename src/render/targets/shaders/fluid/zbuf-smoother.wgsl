@@ -64,7 +64,9 @@ fn fs_main(in: VOut) -> FOut {
     for (px.y = -SIDE; px.y < SIDE; px.y += 1) {
       let pos = vec2f(px);
       o.depth += textureSample(zbuf, smp, in.texcoord.xy + dh*pos) * at(px+CENTER);
-      o.norm += textureSample(normals_unsmoothed, smp, in.texcoord.xy + dh*pos) * at(px+CENTER);
+      o.norm += vec4(textureSample(normals_unsmoothed, smp, in.texcoord.xy + dh*pos).xyzw
+                    //  textureSample(thickness, smp, in.texcoord.xy + dh*pos).x)
+                    ) * at(px+CENTER);
     };
   }
   return o;

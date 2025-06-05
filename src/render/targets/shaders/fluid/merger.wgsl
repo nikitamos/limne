@@ -58,7 +58,7 @@ fn ffresnel(cos_theta: f32) -> f32 {
 const SCENE_COLOR: vec3f = vec3f(1.0, 1.0, 1.0);
 const FLUID_COLOR: vec3f = vec3f(0.07, 0.075, 1.0);
 const DIFFUSE_COLOR: vec3f = vec3f(1.0, 1.0, 1.0);
-const SUN = vec4f(0.0, -100.0, 0.0, 1.0);
+const SUN = vec4f(0.0, 100.0, 0.0, 1.0);
 
 fn get_normal(pos: vec2f) -> vec3f {
   return normalize(textureSample(normal, smp, pos)).xyz*vec3(1.,1.,1.);
@@ -92,6 +92,7 @@ fn fs_main(in: VOut) -> FOut {
   let phong =
     a * (1 - f)
   + b * f
+  + vec3f(1.0, 0.0, 0.0) * specular
   + DIFFUSE_COLOR*diffuse;
   o.col = vec4(phong, 1.0);
   return o;

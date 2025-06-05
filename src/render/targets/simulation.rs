@@ -1,4 +1,5 @@
 use core::{f32, slice};
+use std::cell::Cell;
 
 use cgmath::{Point3, Vector3, Zero};
 use rayon::prelude::*;
@@ -29,13 +30,13 @@ pub struct SimulationParams {
 impl Default for SimulationParams {
   fn default() -> Self {
     Self {
-      k: 40.0,
-      m0: 30.0,
+      k: 1e6,
+      m0: 0.001,
       viscosity: 0.0,
-      h: 2.0,
-      rho0: 5.0,
+      h: 0.001,
+      rho0: 1000.0,
       e: 0.8,
-      w: 20.0,
+      w: 5.0,
       ttr: 0.25,
       dtr: 1.2,
       paused: false,
@@ -96,6 +97,7 @@ pub struct SphSimulation {
   count: usize,
   solver: Option<SphSolverGpu>,
   smoother: Box<dyn Blur + Sync + Send>,
+  params: SimulationParams,
 }
 
 impl<'a> RenderTarget<'a> for SphSimulation {
@@ -229,6 +231,7 @@ impl SphSimulation {
       count,
       solver: None,
       smoother: Box::new(GaussianBlur::default()),
+      params: Default::default(),
     };
     out.init_pipelines(device, format, global_layout, depth);
     out.regenerate_positions(device);
@@ -236,16 +239,23 @@ impl SphSimulation {
   }
 
   fn regenerate_positions(&mut self, device: &wgpu::Device) {
-    let w_distr = rand::distr::Uniform::new(-10.0, 20.0).unwrap();
+    let a = (self.count as f32).cbrt() * self.params.h;
+    let len = (self.count as f32).cbrt() as usize;
+    // let a = (self.count as f32 * 4. / 3. * f32::consts::PI * self.params.h.powi(3)).cbrt();
+    let w_distr = rand::distr::Uniform::new(-10.0, -10. + a).unwrap();
 
     let mut parts = vec![Particle::default(); self.count];
 
-    parts.par_iter_mut().for_each(|p| {
+    const K: f32 = 0.7;
+    parts.par_iter_mut().enumerate().for_each(|(i, p)| {
       let mut rng = rand::rng();
       p.pos = Point3 {
-        x: rng.sample(w_distr),
-        y: rng.sample(w_distr),
-        z: rng.sample(w_distr),
+        // x: rng.sample(w_distr),
+        // y: rng.sample(w_distr),
+        // z: rng.sample(w_distr),
+        x: K*self.params.h * ((i % len) as f32),
+        y: K*self.params.h * (((i / len) % len) as f32),
+        z: K*self.params.h * ((i / (len * len)) as f32),
       };
 
       p.velocity = Vector3::zero();
@@ -328,12 +338,13 @@ impl SphSimulation {
     self.regenerate_positions(device);
   }
 
-  fn write_buffers(&self, queue: &wgpu::Queue, params: &SimulationParams) {
+  fn write_buffers(&mut self, queue: &wgpu::Queue, params: &SimulationParams) {
     queue.write_buffer(
       self.params_buf.as_ref().unwrap(),
       0,
       params.as_bytes_buffer(),
     );
+    self.params = params.clone();
   }
 
   pub fn set_blur(

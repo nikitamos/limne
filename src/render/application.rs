@@ -3,6 +3,7 @@ use cgmath::{num_traits::zero, InnerSpace, Vector2, Zero};
 use eframe::CreationContext;
 use egui::mutex::Mutex;
 use egui::{Grid, Key, Rect, Sense};
+use std::time::Duration;
 use std::{f32::consts::PI, time::Instant};
 
 use super::{
@@ -20,17 +21,19 @@ pub struct App {
   params: SimulationParams,
   controller: OrbitCameraController,
   immediate_blur: bool,
+  fixed_dt: bool,
+  dt: f32,
   gauss: GaussianBlur,
 }
 
-const K_RANGE: std::ops::RangeInclusive<f32> = 0.0..=500.0;
+const K_RANGE: std::ops::RangeInclusive<f32> = 0.0..=1.0e10;
 const M0_RANGE: std::ops::RangeInclusive<f32> = 0.0..=500.0;
-const NU_RANGE: std::ops::RangeInclusive<f32> = 0.0..=10.0;
+const NU_RANGE: std::ops::RangeInclusive<f32> = 0.0..=1.0;
 
 impl eframe::App for App {
   fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
     let time = Instant::now();
-    let dt = time - self.time;
+    let mut dt = time - self.time;
     let mut new_blur: Option<Box<dyn Blur + Send + Sync + 'static>> = None;
     self.time = time;
 
@@ -41,7 +44,7 @@ impl eframe::App for App {
         ui.end_row();
 
         ui.label("K");
-        ui.add(egui::Slider::new(&mut self.params.k, K_RANGE));
+        ui.add(egui::Slider::new(&mut self.params.k, K_RANGE).logarithmic(true));
         ui.end_row();
 
         ui.label("m0");
@@ -49,7 +52,7 @@ impl eframe::App for App {
         ui.end_row();
 
         ui.label("ν");
-        ui.add(egui::Slider::new(&mut self.params.viscosity, NU_RANGE));
+        ui.add(egui::Slider::new(&mut self.params.viscosity, NU_RANGE).logarithmic(true));
         ui.end_row();
 
         ui.label("h");
@@ -60,7 +63,7 @@ impl eframe::App for App {
         ui.end_row();
         if !self.rho_from_h {
           ui.label("ρ₀");
-          ui.add(egui::Slider::new(&mut self.params.rho0, 0.0f32..=20.0f32));
+          ui.add(egui::Slider::new(&mut self.params.rho0, 20.0f32..=1500.0f32));
           ui.end_row();
         } else {
           self.params.rho0 = self.params.m0 / (4. / 3. * PI * self.params.h.powi(3));
@@ -71,11 +74,19 @@ impl eframe::App for App {
         ui.end_row();
 
         ui.label("w");
-        ui.add(egui::Slider::new(&mut self.params.w, 0.0f32..=500.0f32));
+        ui.add(egui::Slider::new(&mut self.params.w, 0.0f32..=15.0f32));
         ui.end_row();
 
         ui.label("t factor");
         ui.add(egui::Slider::new(&mut self.time_factor, 0.0..=1.0));
+        ui.end_row();
+
+        ui.checkbox(&mut self.fixed_dt, "Fixed time step");
+        if self.fixed_dt {
+          ui.add(egui::Slider::new(&mut self.dt, 0.0..=0.7));
+        } else {
+          self.dt = dt.as_secs_f32();
+        }
         ui.end_row();
 
         ui.separator();
@@ -185,16 +196,17 @@ Looks at: ({:.1}, {:.1}, {:.1})\nr={:.1}",
         if delta != zero() {
           delta = delta.normalize() * 2.0;
         }
+        let r = self.controller.get_radius();
         self
           .controller
           .rotate_radians(drag)
-          .move_center_local(delta)
-          .move_radius(scroll.y * -0.5);
+          .move_center_local(delta*r/100.)
+          .move_radius(scroll.y * -0.05);
 
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
           rect,
           StateCallback {
-            dt: dt.as_secs_f32() * self.time_factor,
+            dt: self.dt * self.time_factor,
             time: (time - self.startup_time).as_secs_f32(),
             params: self.params,
             camera: self.controller.get_camera(),
@@ -231,7 +243,8 @@ impl App {
       params: Default::default(),
       controller: Default::default(),
       gauss: Default::default(),
-      immediate_blur: false
+      immediate_blur: false,
+      fixed_dt: false, dt: 0.0
     }
   }
 }

@@ -48,7 +48,8 @@ fn poly6(r: f32, h: f32) -> f32 {
 }
 
 const WENDLAND_ALPHA: f32 = 21. / 16. / PI;
-fn wendland(r: f32, h: f32) -> f32 {
+fn wendland(r: f32, _h: f32) -> f32 {
+  let h = _h / 2;
   let q = r / h;
   if 0. <= q && q <= 2 {
     return WENDLAND_ALPHA / (h*h*h) * (2*q + 1) * pow(1 - .5*q, 4.);
@@ -56,12 +57,20 @@ fn wendland(r: f32, h: f32) -> f32 {
   return 0.;
 }
 
-fn grad_wendland(r: vec3f, h: f32) -> vec3f {
+fn grad_wendland(r: vec3f, _h: f32) -> vec3f {
+  let h = _h / 2;
   let q = length(r) / h;
   if 0. <= q && q <= 2. {
     return -WENDLAND_ALPHA / (h*h*h*h) * 5*q * pow(1 - .5*q, 3.) * normalize(r);
   }
   return vec3(0.);
+}
+
+fn spiky(r: f32, h: f32) -> f32 {
+  if 0 <= r && r <= h {
+    return 15. / (PI*h*h*h * h*h*h) * (h-r)*(h-r)*(h-r);
+  }
+  return 0.;
 }
 
 fn grad_spiky(r: vec3f, h: f32) -> vec3f {
@@ -123,6 +132,7 @@ fn binsearch_pos_x_right(p: Particle) -> u32 {
 
 // This constant **must** be kept the same as `solvers::sph_solver_gpu::SOLVER_WG_SIZE`
 const WG_SIZE: u32 = 16;
+const NA: f32 = 7;
 @compute @workgroup_size(WG_SIZE)
 fn density_pressure(@builtin(global_invocation_id) idx: vec3u) {
   let num = idx.x;
@@ -130,7 +140,8 @@ fn density_pressure(@builtin(global_invocation_id) idx: vec3u) {
   let rho = intrp_density(old_particles[num].pos);
   cur_particles[num].density = rho;
   // Pressure
-  var p = params.k * (rho - params.rho0);
+  var p = 1 / (NA*params.k) * (pow((cur_particles[num].density)/params.rho0, NA) - 1);
+  // var p = params.k * (rho - params.rho0);
   if p != p || p < 0.0 { // p is NaN or < 0
     p = 0.;
   }
@@ -162,7 +173,7 @@ fn pressure_forces(@builtin(global_invocation_id) idx: vec3u) {
       continue;
     }
     // pressure
-    cur_particles[i].forces -= 0.5 * (pressure[i] + pressure[j]) / cur_particles[j].density
+    cur_particles[i].forces -= (pressure[i]/cur_particles[i].density + pressure[j]/cur_particles[j].density)
       * grad_wendland(old_particles[i].pos - old_particles[j].pos, params.h);
     // viscosity
     cur_particles[i].forces += params.viscosity * (old_particles[j].velocity - old_particles[i].velocity)
@@ -172,9 +183,9 @@ fn pressure_forces(@builtin(global_invocation_id) idx: vec3u) {
   if length(cur_particles[i].forces) != length(cur_particles[i].forces) {
     cur_particles[i].forces = vec3f(0.);
   }
-  cur_particles[i].forces.y -= 3.0;
+  cur_particles[i].forces.y -= 1000.0;
   cur_particles[i].forces *= params.m0;
-  // cur_particles[i].forces += 20.0*normalize(vec3(old_particles[i].pos.x, 0.0, -old_particles[i].pos.z));
+  // cur_particles[i].forces += 20.0*cross(vec3(0.,1.,0.), old_particles[i].pos);
 }
 
 fn project_on(a: vec3f, direction: vec3f) -> vec3f {
@@ -203,12 +214,12 @@ fn integrate_forces(@builtin(global_invocation_id) idx: vec3u) {
     p.x = clamp(p.x, -w, w);
     v.x = -e * v.x;
   }
-  if p.y < -30. {
-    p.y = -30.;
+  if p.y < 0. {
+    p.y = 0.;
     v.y = -e * v.y;
   }
-  if p.y > 70. {
-    p.y = 70.;
+  if p.y > 10. {
+    p.y = 10.;
     v.y = -e * v.y;
   }
   cur_particles[i].pos = p;
