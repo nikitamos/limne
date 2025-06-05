@@ -142,6 +142,7 @@ async fn main() {
       params: params,
       camera: cam,
       size: SIZE_VEC,
+      new_blur: egui::mutex::Mutex::new(None)
     };
 
     if capture_count > 0 {
