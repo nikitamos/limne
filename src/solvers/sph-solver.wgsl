@@ -47,25 +47,6 @@ fn poly6(r: f32, h: f32) -> f32 {
   return 0.;
 }
 
-const WENDLAND_ALPHA: f32 = 21. / 16. / PI;
-fn wendland(r: f32, _h: f32) -> f32 {
-  let h = _h / 2;
-  let q = r / h;
-  if 0. <= q && q <= 2 {
-    return WENDLAND_ALPHA / (h*h*h) * (2*q + 1) * pow(1 - .5*q, 4.);
-  }
-  return 0.;
-}
-
-fn grad_wendland(r: vec3f, _h: f32) -> vec3f {
-  let h = _h / 2;
-  let q = length(r) / h;
-  if 0. <= q && q <= 2. {
-    return -WENDLAND_ALPHA / (h*h*h*h) * 5*q * pow(1 - .5*q, 3.) * normalize(r);
-  }
-  return vec3(0.);
-}
-
 fn spiky(r: f32, h: f32) -> f32 {
   if 0 <= r && r <= h {
     return 15. / (PI*h*h*h * h*h*h) * (h-r)*(h-r)*(h-r);
@@ -96,38 +77,10 @@ fn intrp_density(at: vec3<f32>) -> f32 {
   var sum: f32 = 0.0;
   let els = arrayLength(&old_particles);
   for (var i: u32 = 0; i < els; i += u32(1)) {
-    sum += wendland(distance(at, old_particles[i].pos), params.h);
+    sum += poly6(distance(at, old_particles[i].pos), params.h);
   }
   sum *= params.m0;
   return sum;
-}
-
-fn binsearch_pos_x_left(p: Particle) -> u32 {
-  var r = arrayLength(&old_particles);
-  var l = 0u;
-  while (l < r) {
-    let m = l + (r-l) / 2;
-    if mpless(old_particles[m], p) {
-      l = m + 1;
-    } else {
-      r = m;
-    }
-  }
-  return l;
-}
-
-fn binsearch_pos_x_right(p: Particle) -> u32 {
-  var r = arrayLength(&old_particles);
-  var l = 0u;
-  while (l < r) {
-    let m = l + (r-l) / 2;
-    if mpless(p, old_particles[m]) {
-      r = m;
-    } else {
-      l = m + 1;
-    }
-  }
-  return r - 1;
 }
 
 // This constant **must** be kept the same as `solvers::sph_solver_gpu::SOLVER_WG_SIZE`
@@ -142,7 +95,7 @@ fn density_pressure(@builtin(global_invocation_id) idx: vec3u) {
   // Pressure
   var p = 1 / (NA*params.k) * (pow((cur_particles[num].density)/params.rho0, NA) - 1);
   // var p = params.k * (rho - params.rho0);
-  if p != p || p < 0.0 { // p is NaN or < 0
+  if p != p { // p is NaN or < 0
     p = 0.;
   }
   pressure[num] = p;
@@ -166,25 +119,27 @@ fn pressure_forces(@builtin(global_invocation_id) idx: vec3u) {
   while r < els - 1 && !mpless(probe, old_particles[r]) {
     r += 1u;
   }
-  // let l = binsearch_pos_x_left(probe);
-  // let r = binsearch_pos_x_right(probe);
+  var f_visc = vec3f(0.);
+  cur_particles[i].forces = vec3(0.);
   for (var j: u32 = l; j < r; j += 1u) {
     if (i == j) {
       continue;
     }
     // pressure
-    cur_particles[i].forces -= (pressure[i]/cur_particles[i].density + pressure[j]/cur_particles[j].density)
-      * grad_wendland(old_particles[i].pos - old_particles[j].pos, params.h);
-    // viscosity
-    cur_particles[i].forces += params.viscosity * (old_particles[j].velocity - old_particles[i].velocity)
+    cur_particles[i].forces -= (pressure[i]/cur_particles[i].density/cur_particles[i].density
+                              + pressure[j]/cur_particles[j].density/cur_particles[j].density)
+                            * grad_spiky(old_particles[i].pos - old_particles[j].pos, params.h);
+    // FIXME: viscosity
+    f_visc += params.viscosity * (old_particles[j].velocity - old_particles[i].velocity)
      * laplacian_viscosity(distance(old_particles[i].pos, old_particles[j].pos), params.h) / cur_particles[j].density;
   }
   // NaN
   if length(cur_particles[i].forces) != length(cur_particles[i].forces) {
     cur_particles[i].forces = vec3f(0.);
   }
-  cur_particles[i].forces.y -= 1000.0;
-  cur_particles[i].forces *= params.m0;
+  cur_particles[i].forces *= cur_particles[i].density * params.m0/params.rho0;
+  // External forces
+  cur_particles[i].velocity += g.dt/params.m0 * (vec3f(0., -10.0, 0.) + f_visc);
   // cur_particles[i].forces += 20.0*cross(vec3(0.,1.,0.), old_particles[i].pos);
 }
 
@@ -196,10 +151,10 @@ fn project_on(a: vec3f, direction: vec3f) -> vec3f {
 fn integrate_forces(@builtin(global_invocation_id) idx: vec3u) {
   let i = idx.x;
   let els = arrayLength(&pressure);
-  let a = cur_particles[i].forces / cur_particles[i].density;
+  cur_particles[i].velocity += g.dt * cur_particles[i].forces/params.m0;
   
+  let a = cur_particles[i].forces / cur_particles[i].density;
   cur_particles[i].pos += g.dt * cur_particles[i].velocity + 0.5 * a * g.dt * g.dt;
-  cur_particles[i].velocity += g.dt * a;
 
   // Out of bounds check
   var p = cur_particles[i].pos;
