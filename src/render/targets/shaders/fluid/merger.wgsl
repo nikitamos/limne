@@ -91,7 +91,7 @@ fn fs_main(in: VOut) -> FOut {
 
   let phong =
     a * (1 - f)
-  + b * f
+  // + b * f
   + DIFFUSE_COLOR*diffuse;
   o.col = vec4(phong, 1.0);
   return o;
