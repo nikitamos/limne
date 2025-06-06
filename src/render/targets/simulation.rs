@@ -31,14 +31,14 @@ impl Default for SimulationParams {
   fn default() -> Self {
     Self {
       k: 1e6,
-      m0: 0.001,
+      m0: 500.0,
       viscosity: 0.0,
-      h: 0.001,
+      h: 0.02,
       rho0: 1000.0,
       e: 0.8,
-      w: 5.0,
-      ttr: 0.25,
-      dtr: 1.2,
+      w: 0.2,
+      ttr: 0.0,
+      dtr: 0.0,
       paused: false,
       regen_particles: false,
     }
@@ -173,6 +173,7 @@ impl<'a> RenderTarget<'a> for SphSimulation {
       format,
       resources.global_layout,
       resources.depth_stencil,
+      true
     );
     // FIXME: Is it necessary to do? isn't it enough to call `init_pipelines`?
     self.fluid_renderer.as_mut().unwrap().resized(
@@ -233,7 +234,7 @@ impl SphSimulation {
       smoother: Box::new(GaussianBlur::default()),
       params: Default::default(),
     };
-    out.init_pipelines(device, format, global_layout, depth);
+    out.init_pipelines(device, format, global_layout, depth, false);
     out.regenerate_positions(device);
     out
   }
@@ -242,20 +243,22 @@ impl SphSimulation {
     let a = (self.count as f32).cbrt() * self.params.h;
     let len = (self.count as f32).cbrt() as usize;
     // let a = (self.count as f32 * 4. / 3. * f32::consts::PI * self.params.h.powi(3)).cbrt();
-    let w_distr = rand::distr::Uniform::new(-10.0, -10. + a).unwrap();
+    let v0 = 4. / 3. * f32::consts::PI * self.params.h.powi(3);
+    let w_distr = rand::distr::Uniform::new(-a / 2., a / 2.).unwrap();
+    let y_distr = rand::distr::Uniform::new(0., a).unwrap();
 
     let mut parts = vec![Particle::default(); self.count];
 
-    const K: f32 = 0.7;
+    const K: f32 = 0.4;
     parts.par_iter_mut().enumerate().for_each(|(i, p)| {
       let mut rng = rand::rng();
       p.pos = Point3 {
-        // x: rng.sample(w_distr),
-        // y: rng.sample(w_distr),
-        // z: rng.sample(w_distr),
-        x: K*self.params.h * ((i % len) as f32),
-        y: K*self.params.h * (((i / len) % len) as f32),
-        z: K*self.params.h * ((i / (len * len)) as f32),
+        x: rng.sample(w_distr),
+        y: rng.sample(y_distr),
+        z: rng.sample(w_distr),
+        // x: K*self.params.h * ((i % len) as f32),
+        // y: K*self.params.h * (((i / len) % len) as f32),
+        // z: K*self.params.h * ((i / (len * len)) as f32),
       };
 
       p.velocity = Vector3::zero();
@@ -269,6 +272,7 @@ impl SphSimulation {
     format: wgpu::TextureFormat,
     global_layout: &wgpu::BindGroupLayout,
     depth_stencil: &DepthStencilState,
+    resize: bool,
   ) {
     // PARAMETER BUFFER
     let params_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -335,7 +339,9 @@ impl SphSimulation {
     self.params_bg = Some(params_bg);
     self.params_buf = Some(params_buf);
     self.solver = Some(solver);
-    self.regenerate_positions(device);
+    if !resize {
+      self.regenerate_positions(device);
+    }
   }
 
   fn write_buffers(&mut self, queue: &wgpu::Queue, params: &SimulationParams) {

@@ -16,7 +16,7 @@ impl Default for OrbitCameraController {
       center: Point3::origin(),
       right: Vector3::unit_x(),
       up: Vector3::unit_y(),
-      r: 15.,
+      r: 8.,
     }
   }
 }

@@ -3,7 +3,6 @@ use cgmath::{num_traits::zero, InnerSpace, Vector2, Zero};
 use eframe::CreationContext;
 use egui::mutex::Mutex;
 use egui::{Grid, Key, Rect, Sense};
-use std::time::Duration;
 use std::{f32::consts::PI, time::Instant};
 
 use super::{
@@ -74,7 +73,7 @@ impl eframe::App for App {
         ui.end_row();
 
         ui.label("w");
-        ui.add(egui::Slider::new(&mut self.params.w, 0.0f32..=15.0f32));
+        ui.add(egui::Slider::new(&mut self.params.w, 0.0f32..=2.0f32));
         ui.end_row();
 
         ui.label("t factor");

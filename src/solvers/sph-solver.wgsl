@@ -77,7 +77,7 @@ fn intrp_density(at: vec3<f32>) -> f32 {
   var sum: f32 = 0.0;
   let els = arrayLength(&old_particles);
   for (var i: u32 = 0; i < els; i += u32(1)) {
-    sum += poly6(distance(at, old_particles[i].pos), params.h);
+    sum += spiky(distance(at, old_particles[i].pos), params.h);
   }
   sum *= params.m0;
   return sum;
@@ -93,8 +93,8 @@ fn density_pressure(@builtin(global_invocation_id) idx: vec3u) {
   let rho = intrp_density(old_particles[num].pos);
   cur_particles[num].density = rho;
   // Pressure
-  var p = 1 / (NA*params.k) * (pow((cur_particles[num].density)/params.rho0, NA) - 1);
-  // var p = params.k * (rho - params.rho0);
+  // var p = 1 / (NA*params.k) * (pow((cur_particles[num].density)/params.rho0, NA) - 1);
+  var p = params.k * (rho - params.rho0);
   if p != p { // p is NaN or < 0
     p = 0.;
   }
@@ -121,7 +121,7 @@ fn pressure_forces(@builtin(global_invocation_id) idx: vec3u) {
   }
   var f_visc = vec3f(0.);
   cur_particles[i].forces = vec3(0.);
-  for (var j: u32 = l; j < r; j += 1u) {
+  for (var j: u32 = 0; j < els; j += 1u) {
     if (i == j) {
       continue;
     }
@@ -129,9 +129,6 @@ fn pressure_forces(@builtin(global_invocation_id) idx: vec3u) {
     cur_particles[i].forces -= (pressure[i]/cur_particles[i].density/cur_particles[i].density
                               + pressure[j]/cur_particles[j].density/cur_particles[j].density)
                             * grad_spiky(old_particles[i].pos - old_particles[j].pos, params.h);
-    // FIXME: viscosity
-    f_visc += params.viscosity * (old_particles[j].velocity - old_particles[i].velocity)
-     * laplacian_viscosity(distance(old_particles[i].pos, old_particles[j].pos), params.h) / cur_particles[j].density;
   }
   // NaN
   if length(cur_particles[i].forces) != length(cur_particles[i].forces) {
@@ -139,7 +136,7 @@ fn pressure_forces(@builtin(global_invocation_id) idx: vec3u) {
   }
   cur_particles[i].forces *= cur_particles[i].density * params.m0/params.rho0;
   // External forces
-  cur_particles[i].velocity += g.dt/params.m0 * (vec3f(0., -10.0, 0.) + f_visc);
+  cur_particles[i].velocity += g.dt/params.m0 * (vec3f(0., -30.0, 0.) + f_visc);
   // cur_particles[i].forces += 20.0*cross(vec3(0.,1.,0.), old_particles[i].pos);
 }
 
@@ -151,10 +148,17 @@ fn project_on(a: vec3f, direction: vec3f) -> vec3f {
 fn integrate_forces(@builtin(global_invocation_id) idx: vec3u) {
   let i = idx.x;
   let els = arrayLength(&pressure);
-  cur_particles[i].velocity += g.dt * cur_particles[i].forces/params.m0;
+  var a: vec3f = vec3f(0.0);
+  if cur_particles[i].density == cur_particles[i].density {
+    a = g.dt * cur_particles[i].forces / cur_particles[i].density;
+  }
+  cur_particles[i].velocity += a;
+  // cur_particles[i].velocity += g.dt * cur_particles[i].forces/params.m0;
   
-  let a = cur_particles[i].forces / cur_particles[i].density;
-  cur_particles[i].pos += g.dt * cur_particles[i].velocity + 0.5 * a * g.dt * g.dt;
+  cur_particles[i].pos += g.dt * cur_particles[i].velocity;
+
+  // let a = cur_particles[i].forces / params.m0;
+  // cur_particles[i].pos += g.dt * cur_particles[i].velocity + 0.5 * a * g.dt * g.dt;
 
   // Out of bounds check
   var p = cur_particles[i].pos;

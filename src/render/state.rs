@@ -97,7 +97,7 @@ impl PersistentState {
       self.texture_drawer.resized(device, &self.target_texture);
 
       self.projection =
-        GL_TRANSFORM_TO_WGPU * cgmath::perspective(Deg(6.0), size.x / size.y, 2., 40.);
+        GL_TRANSFORM_TO_WGPU * cgmath::perspective(Deg(60.0), size.x / size.y, 0.8, 40.);
     }
   }
 
@@ -242,7 +242,7 @@ impl PersistentState {
         },
         format,
         SimInit {
-          count: 16384,
+          count: 8192,
           size: egui::Vec2 {
             x: 1200.0,
             y: 800.0,
