@@ -31,13 +31,13 @@ impl Default for SimulationParams {
     Self {
       k: 40.0,
       m0: 30.0,
-      viscosity: 0.0,
+      viscosity: 1.7,
       h: 2.0,
       rho0: 5.0,
       e: 0.8,
-      w: 20.0,
-      ttr: 0.25,
-      dtr: 1.2,
+      w: 27.0,
+      ttr: 1.1,
+      dtr: 0.0,
       paused: false,
       regen_particles: false,
     }
